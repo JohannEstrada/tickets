@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
 import 'tickets_total_screen.dart';
@@ -15,6 +18,75 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+  List<Map<String, dynamic>> _urs = [];
+  bool _isLoadingURs = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchURs();
+  }
+
+  Future<void> _fetchURs() async {
+    setState(() {
+      _isLoadingURs = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? token = prefs.getString('auth_token');
+
+      if (token == null) {
+        setState(() {
+          _isLoadingURs = false;
+        });
+        return;
+      }
+
+      final response = await http.get(
+        Uri.parse('http://tickets.sspmichoacanlocal.gob.mx/api/urs/revisar'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        List<dynamic> rawList = [];
+        if (decoded is List) {
+          rawList = decoded;
+        } else if (decoded is Map && decoded['data'] is List) {
+          rawList = decoded['data'];
+        } else if (decoded is Map && decoded['urs'] is List) {
+          rawList = decoded['urs'];
+        }
+
+        setState(() {
+          _urs = rawList.map((item) {
+            return {
+              'id': item['id'],
+              'nombre':
+                  item['nombre'] ??
+                  item['descripcion'] ??
+                  item['ur'] ??
+                  'Ubicación ${item['id']}',
+            };
+          }).toList();
+          _isLoadingURs = false;
+        });
+      } else {
+        setState(() {
+          _isLoadingURs = false;
+        });
+      }
+    } catch (_) {
+      setState(() {
+        _isLoadingURs = false;
+      });
+    }
+  }
 
   // Lista de pantallas que se mostrarán en el cuerpo
   final List<Widget> _screens = const [
@@ -172,6 +244,11 @@ class _MainScreenState extends State<MainScreen> {
   void _showCreateTicketModal(BuildContext context) {
     String? selectedDeviceType;
     String? selectedUR;
+    final nameController = TextEditingController();
+    final paternalController = TextEditingController();
+    final maternalController = TextEditingController();
+    final descriptionController = TextEditingController();
+    bool isSubmitting = false;
 
     showModalBottomSheet(
       context: context,
@@ -224,6 +301,7 @@ class _MainScreenState extends State<MainScreen> {
 
                   // Campo Nombre
                   TextField(
+                    controller: nameController,
                     style: const TextStyle(color: Color(0xFF1E293B)),
                     textCapitalization: TextCapitalization.characters,
                     inputFormatters: [
@@ -266,6 +344,7 @@ class _MainScreenState extends State<MainScreen> {
                     children: [
                       Expanded(
                         child: TextField(
+                          controller: paternalController,
                           style: const TextStyle(color: Color(0xFF1E293B)),
                           textCapitalization: TextCapitalization.characters,
                           inputFormatters: [
@@ -307,6 +386,7 @@ class _MainScreenState extends State<MainScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextField(
+                          controller: maternalController,
                           style: const TextStyle(color: Color(0xFF1E293B)),
                           textCapitalization: TextCapitalization.characters,
                           inputFormatters: [
@@ -351,6 +431,7 @@ class _MainScreenState extends State<MainScreen> {
 
                   // Campo Descripción
                   TextField(
+                    controller: descriptionController,
                     style: const TextStyle(color: Color(0xFF1E293B)),
                     maxLines: 4,
                     decoration: InputDecoration(
@@ -449,7 +530,7 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                   const SizedBox(height: 18),
 
-                  // Campo Ubicación (UR) - Placeholder temporal hasta conectar el endpoint
+                  // Campo Ubicación (UR)
                   DropdownButtonFormField<String>(
                     value: selectedUR,
                     dropdownColor: Colors.white,
@@ -486,20 +567,43 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                       ),
                     ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'TEMP_1',
-                        child: Text('DIRECCIÓN GENERAL (Prueba)'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'TEMP_2',
-                        child: Text('RECURSOS HUMANOS (Prueba)'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'TEMP_3',
-                        child: Text('SOPORTE TÉCNICO (Prueba)'),
-                      ),
-                    ],
+                    items: _isLoadingURs
+                        ? const [
+                            DropdownMenuItem<String>(
+                              value: null,
+                              enabled: false,
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF0A2E5C),
+                                    ),
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text('Cargando ubicaciones...'),
+                                ],
+                              ),
+                            ),
+                          ]
+                        : (_urs.isEmpty
+                              ? const [
+                                  DropdownMenuItem<String>(
+                                    value: null,
+                                    enabled: false,
+                                    child: Text('Error al cargar ubicaciones'),
+                                  ),
+                                ]
+                              : _urs.map((ur) {
+                                  return DropdownMenuItem<String>(
+                                    value: ur['id'].toString(),
+                                    child: Text(
+                                      ur['nombre'].toString().toUpperCase(),
+                                    ),
+                                  );
+                                }).toList()),
                     onChanged: (value) {
                       setModalState(() {
                         selectedUR = value;
@@ -513,31 +617,245 @@ class _MainScreenState extends State<MainScreen> {
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: const Color(0xFF0A2E5C),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            content: const Row(
-                              children: [
-                                Icon(
-                                  Icons.check_circle_rounded,
-                                  color: Colors.white,
-                                ),
-                                SizedBox(width: 12),
-                                Text(
-                                  'Ticket registrado con éxito',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              // Validación de campos
+                              if (nameController.text.trim().isEmpty ||
+                                  paternalController.text.trim().isEmpty ||
+                                  maternalController.text.trim().isEmpty ||
+                                  descriptionController.text.trim().isEmpty ||
+                                  selectedDeviceType == null ||
+                                  selectedUR == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    behavior: SnackBarBehavior.floating,
+                                    backgroundColor: Colors.redAccent,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    content: const Row(
+                                      children: [
+                                        Icon(
+                                          Icons.error_outline_rounded,
+                                          color: Colors.white,
+                                        ),
+                                        SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            'Por favor, llena todos los campos',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              setModalState(() {
+                                isSubmitting = true;
+                              });
+
+                              try {
+                                final prefs =
+                                    await SharedPreferences.getInstance();
+                                final String? token = prefs.getString(
+                                  'auth_token',
+                                );
+
+                                if (token == null) {
+                                  setModalState(() {
+                                    isSubmitting = false;
+                                  });
+                                  return;
+                                }
+
+                                // NOTA: Endpoint de creación de tickets
+                                final String url =
+                                    'http://tickets.sspmichoacanlocal.gob.mx/api/tickets/nuevo';
+                                final Map<String, String> headers = {
+                                  'Content-Type': 'application/json',
+                                  'Accept': 'application/json',
+                                  'Authorization': 'Bearer $token',
+                                };
+                                final Map<String, dynamic> requestBody = {
+                                  'nombre': nameController.text
+                                      .trim()
+                                      .toUpperCase(),
+                                  'ap_paterno': paternalController.text
+                                      .trim()
+                                      .toUpperCase(),
+                                  'ap_materno': maternalController.text
+                                      .trim()
+                                      .toUpperCase(),
+                                  'descripcion': descriptionController.text
+                                      .trim(),
+                                  'tipo_equipo': selectedDeviceType,
+                                  'ur_id':
+                                      int.tryParse(selectedUR!) ?? selectedUR,
+                                  'cuartel_id': 1,
+                                  'modulo_origen': 3,
+                                };
+
+                                print(
+                                  '========== INICIO DE PETICIÓN POST (CREAR TICKET) ==========',
+                                );
+                                print('URL: $url');
+                                print('Headers: $headers');
+                                print('Body: ${jsonEncode(requestBody)}');
+                                print('--- DETALLE DE CAMPOS ---');
+                                print('Nombre: ${requestBody['nombre']}');
+                                print(
+                                  'Ap Paterno: ${requestBody['ap_paterno']}',
+                                );
+                                print(
+                                  'Ap Materno: ${requestBody['ap_materno']}',
+                                );
+                                print(
+                                  'Descripción: ${requestBody['descripcion']}',
+                                );
+                                print(
+                                  'Tipo Equipo: ${requestBody['tipo_equipo']}',
+                                );
+                                print('UR ID: ${requestBody['ur_id']}');
+                                print('Cuartel: ${requestBody['cuartel_id']}');
+                                print(
+                                  'Módulo: ${requestBody['modulo_origen']}',
+                                );
+                                print(
+                                  '===========================================================',
+                                );
+
+                                final response = await http.post(
+                                  Uri.parse(url),
+                                  headers: headers,
+                                  body: jsonEncode(requestBody),
+                                );
+
+                                print(
+                                  '========== RESPUESTA RECIBIDA DEL SERVIDOR ==========',
+                                );
+                                print('Status Code: ${response.statusCode}');
+                                print('Headers: ${response.headers}');
+                                print('Body: ${response.body}');
+                                print(
+                                  '======================================================',
+                                );
+
+                                if (response.statusCode == 200 ||
+                                    response.statusCode == 201) {
+                                  if (context.mounted) {
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        behavior: SnackBarBehavior.floating,
+                                        backgroundColor: const Color(
+                                          0xFF10B981,
+                                        ), // Verde SSP Éxito
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        content: const Row(
+                                          children: [
+                                            Icon(
+                                              Icons.check_circle_rounded,
+                                              color: Colors.white,
+                                            ),
+                                            SizedBox(width: 12),
+                                            Text(
+                                              'Ticket registrado con éxito',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } else {
+                                  setModalState(() {
+                                    isSubmitting = false;
+                                  });
+
+                                  String errMsg = 'Error al crear el ticket';
+                                  try {
+                                    final errData = jsonDecode(response.body);
+                                    if (errData['message'] != null) {
+                                      errMsg = errData['message'];
+                                    }
+                                  } catch (_) {}
+
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        behavior: SnackBarBehavior.floating,
+                                        backgroundColor: Colors.redAccent,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        content: Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.error_outline_rounded,
+                                              color: Colors.white,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(child: Text(errMsg)),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                }
+                              } catch (e) {
+                                print(
+                                  '========== EXCEPCIÓN DETECTADA EN EL POST ==========',
+                                );
+                                print('Error: $e');
+                                print(
+                                  '====================================================',
+                                );
+                                setModalState(() {
+                                  isSubmitting = false;
+                                });
+
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      behavior: SnackBarBehavior.floating,
+                                      backgroundColor: Colors.redAccent,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      content: const Row(
+                                        children: [
+                                          Icon(
+                                            Icons.wifi_off_rounded,
+                                            color: Colors.white,
+                                          ),
+                                          SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              'Fallo de conexión al enviar el reporte',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0A2E5C),
                         foregroundColor: Colors.white,
@@ -546,14 +864,23 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                         elevation: 2,
                       ),
-                      child: const Text(
-                        'CREAR TICKET',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
+                      child: isSubmitting
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'CREAR TICKET',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 12),

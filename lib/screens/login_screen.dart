@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'main_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -108,23 +111,90 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleLogin() async {
-    // Para desarrollo, omitimos temporalmente 'if (_formKey.currentState!.validate())'
-    // para que cualquier usuario y contraseña ingresada (o campos vacíos) inicie sesión directamente.
+    if (!_formKey.currentState!.validate()) return;
+
     setState(() {
       _isLoading = true;
     });
 
-    // Simulamos la llamada a la API por 2 segundos para ver los efectos visuales
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final response = await http.post(
+        Uri.parse('http://tickets.sspmichoacanlocal.gob.mx/api/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': _emailController.text.trim(),
+          'password': _passwordController.text,
+        }),
+      );
 
-    if (mounted) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        
+        // El token usualmente viene como 'token' o 'access_token'
+        final String? token = data['token'] ?? data['access_token'];
+        
+        if (token != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('auth_token', token);
+          
+          // También podemos guardar el correo o datos del usuario
+          await prefs.setString('user_email', _emailController.text.trim());
+          if (data['user'] != null && data['user']['nombre'] != null) {
+            await prefs.setString('user_name', data['user']['nombre']);
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+
+          // Mostrar mensaje de éxito
+          _showStatusSnackBar(
+            title: '¡Bienvenido!',
+            message: 'Sesión iniciada con éxito',
+            icon: Icons.check_circle_rounded,
+            isError: false,
+          );
+
+          // Navega directamente a la pantalla MainScreen reemplazando el Login
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const MainScreen()),
+          );
+        }
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+
+        // Intentar parsear el mensaje de error del servidor
+        String errorMessage = 'Verifica tus credenciales e intenta de nuevo.';
+        try {
+          final errorData = jsonDecode(response.body);
+          if (errorData['message'] != null) {
+            errorMessage = errorData['message'];
+          } else if (errorData['error'] != null) {
+            errorMessage = errorData['error'];
+          }
+        } catch (_) {}
+
+        _showStatusSnackBar(
+          title: 'Error de Autenticación',
+          message: errorMessage,
+          icon: Icons.error_outline_rounded,
+          isError: true,
+        );
+      }
+    } catch (e) {
       setState(() {
         _isLoading = false;
       });
 
-      // Navega directamente a la pantalla MainScreen reemplazando el Login
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const MainScreen()),
+      _showStatusSnackBar(
+        title: 'Error de Conexión',
+        message: 'No se pudo conectar al servidor. Verifica tu internet.',
+        icon: Icons.wifi_off_rounded,
+        isError: true,
       );
     }
   }
