@@ -178,7 +178,7 @@ class _MainScreenState extends State<MainScreen> {
                       ),
                       const SizedBox(height: 5),
                       Text(
-                        'Subdirección de Soporte Técnico e Informática',
+                        'Soporte Técnico e Informática',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey.shade600,
@@ -468,7 +468,7 @@ class _MainScreenState extends State<MainScreen> {
                   TextField(
                     controller: descriptionController,
                     style: const TextStyle(color: Color(0xFF1E293B)),
-                    maxLines: 4,
+                    maxLines: 1,
                     textCapitalization: TextCapitalization.characters,
                     inputFormatters: [
                       TextInputFormatter.withFunction(
@@ -484,13 +484,9 @@ class _MainScreenState extends State<MainScreen> {
                         color: Colors.grey.shade600,
                         fontSize: 14,
                       ),
-                      alignLabelWithHint: true,
-                      prefixIcon: const Padding(
-                        padding: EdgeInsets.only(bottom: 50),
-                        child: Icon(
-                          Icons.description_outlined,
-                          color: Color(0xFF0A2E5C),
-                        ),
+                      prefixIcon: const Icon(
+                        Icons.description_outlined,
+                        color: Color(0xFF0A2E5C),
                       ),
                       filled: true,
                       fillColor: const Color(0xFFF8FAFC),
@@ -576,6 +572,7 @@ class _MainScreenState extends State<MainScreen> {
 
                   // Campo Ubicación (UR)
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     value: selectedUR,
                     dropdownColor: Colors.white,
                     icon: const Icon(
@@ -627,7 +624,12 @@ class _MainScreenState extends State<MainScreen> {
                                     ),
                                   ),
                                   SizedBox(width: 12),
-                                  Text('Cargando ubicaciones...'),
+                                  Expanded(
+                                    child: Text(
+                                      'Cargando ubicaciones...',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -645,6 +647,7 @@ class _MainScreenState extends State<MainScreen> {
                                     value: ur['id'].toString(),
                                     child: Text(
                                       ur['nombre'].toString().toUpperCase(),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   );
                                 }).toList()),
@@ -658,6 +661,7 @@ class _MainScreenState extends State<MainScreen> {
 
                   // Campo Asignado a (Dropdown)
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     value: selectedAssignedTo,
                     dropdownColor: Colors.white,
                     icon: const Icon(
@@ -709,7 +713,12 @@ class _MainScreenState extends State<MainScreen> {
                                     ),
                                   ),
                                   SizedBox(width: 12),
-                                  Text('Cargando técnicos...'),
+                                  Expanded(
+                                    child: Text(
+                                      'Cargando técnicos...',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -727,6 +736,7 @@ class _MainScreenState extends State<MainScreen> {
                                     value: u['id'].toString(),
                                     child: Text(
                                       u['nombre'].toString().toUpperCase(),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   );
                                 }).toList()),

@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 
 class TicketsTotalScreen extends StatefulWidget {
   const TicketsTotalScreen({super.key});
@@ -12,10 +14,29 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
   String _userName = '';
   String _selectedFilter = 'Total';
 
+  // Variables para la paginación y conexión al API real
+  List<Map<String, dynamic>> _tickets =
+      []; // Los 15 tickets de la página actual
+  List<Map<String, dynamic>> _allTicketsCache =
+      []; // Caché por si el API no está paginada
+  bool _isServerPaginated = false; // Indica si la API paginó correctamente
+  int _currentPage = 1;
+  int _lastPage = 1;
+  int _totalTickets = 0;
+  bool _isLoading = true;
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _loadUserName();
+    _fetchTickets(page: 1);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserName() async {
@@ -25,73 +46,270 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
       _userName = name;
     });
   }
-  // Datos mock de alta fidelidad y premium
-  final List<Map<String, dynamic>> _mockTickets = [
-    {
-      'id': 'SSP-0248',
-      'solicitante': 'JUAN CARLOS MARTÍNEZ RUIZ',
-      'ur': 'DIRECCIÓN GENERAL DE INFRAESTRUCTURA',
-      'tipo_equipo': 'PC ESCRITORIO',
-      'descripcion':
-          'EL EQUIPO ENCIENDE PERO SE QUEDA TRABADO EN LA PANTALLA DE CARGA DE WINDOWS. SE INTENTÓ REINICIAR EN MODO SEGURO PERO EL COMPORTAMIENTO PERSISTE.',
-      'fecha': 'Hoy • 10:15 AM',
-      'estado': 'Pendiente',
-      'color_estado': const Color(0xFFD97706), // Amber oscuro
-      'bg_estado': const Color(0xFFFEF3C7), // Amber muy claro
-      'icono': Icons.desktop_windows_rounded,
-    },
-    {
-      'id': 'SSP-0245',
-      'solicitante': 'MARÍA ELENA GÓMEZ CASTRO',
-      'ur': 'SUBDIRECCIÓN DE RECURSOS HUMANOS',
-      'tipo_equipo': 'IMPRESORA',
-      'descripcion':
-          'LA IMPRESORA MARCA ATASCO DE PAPEL CONSTANTE EN LA BANDEJA 2, INCLUSO CUANDO NO TIENE HOJAS OBSTRUYENDO. URGENTE PARA EMISIÓN DE NÓMINA.',
-      'fecha': 'Ayer • 04:30 PM',
-      'estado': 'En Proceso',
-      'color_estado': const Color(0xFF2563EB), // Azul SSP premium
-      'bg_estado': const Color(0xFFDBEAFE), // Azul claro
-      'icono': Icons.print_rounded,
-    },
-    {
-      'id': 'SSP-0240',
-      'solicitante': 'ALEJANDRO SANDOVAL TINOCO',
-      'ur': 'CUARTEL VALLADOLID',
-      'tipo_equipo': 'TELEFONO',
-      'descripcion':
-          'EL TELÉFONO DE LA EXTENSIÓN 1420 NO DA TONO DE MARCACIÓN Y SE ESCUCHA ESTÁTICA CONTINUA EN LA BOCINA AL LEVANTAR EL AURICULAR DE LA BASE.',
-      'fecha': '30 May 2026 • 11:20 AM',
-      'estado': 'Resuelto',
-      'color_estado': const Color(0xFF059669), // Verde esmeralda oscuro
-      'bg_estado': const Color(0xFFD1FAE5), // Verde esmeralda claro
-      'icono': Icons.phone_in_talk_rounded,
-    },
-    {
-      'id': 'SSP-0239',
-      'solicitante': 'PATRICIA ORTIZ AGUILAR',
-      'ur': 'UNIDAD DE ASUNTOS INTERNOS',
-      'tipo_equipo': 'LAPTOP',
-      'descripcion':
-          'LA LAPTOP INSTITUCIONAL HP PROBOOK NO LOGRA ENLAZAR CON EL PUNTO DE ACCESO WIFI DEL PISO 2, MIENTRAS QUE POR CABLE DE RED FUNCIONA SIN PROBLEMA.',
-      'fecha': '29 May 2026 • 09:05 AM',
-      'estado': 'Pendiente',
-      'color_estado': const Color(0xFFD97706),
-      'bg_estado': const Color(0xFFFEF3C7),
-      'icono': Icons.laptop_chromebook_rounded,
-    },
-  ];
+
+  Future<void> _fetchTickets({
+    required int page,
+    bool forceFetch = false,
+  }) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    // Si ya tenemos caché local de todos los tickets y la API NO está paginada,
+    // paginamos en memoria directamente para ahorrar red y ser instantáneos
+    if (!_isServerPaginated && _allTicketsCache.isNotEmpty && !forceFetch) {
+      _paginateLocally(page);
+      return;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? token = prefs.getString('auth_token');
+
+      if (token == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Solicitamos page y limit=15
+      final response = await http.get(
+        Uri.parse(
+          'http://tickets.sspmichoacanlocal.gob.mx/api/tickets/revisar?page=$page&limit=15&per_page=15',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        List<dynamic> rawList = [];
+        int lastPage = 1;
+        int currentPage = 1;
+        int total = 0;
+        bool detectedServerPagination = false;
+
+        if (decoded is Map) {
+          if (decoded['current_page'] != null ||
+              decoded['meta']?['current_page'] != null) {
+            detectedServerPagination = true;
+          }
+
+          if (decoded['data'] is List) {
+            rawList = decoded['data'];
+          } else if (decoded['tickets'] is List) {
+            rawList = decoded['tickets'];
+          } else if (decoded['data'] is Map &&
+              decoded['data']['data'] is List) {
+            rawList = decoded['data']['data'];
+          }
+
+          currentPage =
+              decoded['current_page'] ??
+              decoded['meta']?['current_page'] ??
+              page;
+          lastPage =
+              decoded['last_page'] ?? decoded['meta']?['last_page'] ?? page;
+          total =
+              decoded['total'] ?? decoded['meta']?['total'] ?? rawList.length;
+        } else if (decoded is List) {
+          rawList = decoded;
+          total = rawList.length;
+        }
+
+        // Filtrar por el id del usuario logueado (user_id)
+        final int? loggedUserId = prefs.getInt('user_id');
+        if (loggedUserId != null) {
+          rawList = rawList.where((item) {
+            final dynamic ticketUserId = item['user_id'];
+            if (ticketUserId == null) return false;
+            final int? parsedTicketUserId = ticketUserId is int
+                ? ticketUserId
+                : int.tryParse(ticketUserId.toString());
+            return parsedTicketUserId == loggedUserId;
+          }).toList();
+          total = rawList.length;
+        }
+
+        final List<Map<String, dynamic>> parsedTickets = rawList.map((item) {
+          final String nom = (item['nombre'] ?? '').toString().trim();
+          final String pat = (item['ap_paterno'] ?? '').toString().trim();
+          final String mat = (item['ap_materno'] ?? '').toString().trim();
+
+          String solicitante = '';
+          if (nom.isNotEmpty) solicitante += nom;
+          if (pat.isNotEmpty)
+            solicitante += (solicitante.isNotEmpty ? ' ' : '') + pat;
+          if (mat.isNotEmpty)
+            solicitante += (solicitante.isNotEmpty ? ' ' : '') + mat;
+          if (solicitante.isEmpty) solicitante = 'SIN NOMBRE';
+
+          final String rawDate = item['created_at'] ?? item['fecha'] ?? '';
+          String fecha = 'Fecha no disponible';
+          if (rawDate.isNotEmpty) {
+            try {
+              final parsedDate = DateTime.parse(rawDate);
+              fecha =
+                  '${parsedDate.day.toString().padLeft(2, '0')}/${parsedDate.month.toString().padLeft(2, '0')}/${parsedDate.year} • ${parsedDate.hour.toString().padLeft(2, '0')}:${parsedDate.minute.toString().padLeft(2, '0')}';
+            } catch (_) {
+              fecha = rawDate;
+            }
+          }
+
+          String urNombre = 'Ubicación no especificada';
+          if (item['ur'] != null) {
+            if (item['ur'] is Map) {
+              urNombre =
+                  item['ur']['nombre'] ??
+                  item['ur']['descripcion'] ??
+                  'Ubicación';
+            } else {
+              urNombre = item['ur'].toString();
+            }
+          } else if (item['ur_nombre'] != null) {
+            urNombre = item['ur_nombre'].toString();
+          }
+
+          final String rawEstado =
+              (item['estado_actual'] ?? item['estado'] ?? '1')
+                  .toString()
+                  .toUpperCase();
+          String estado = 'Pendiente';
+          if (rawEstado == '1' || rawEstado == 'PENDIENTE') {
+            estado = 'Pendiente';
+          } else if (rawEstado == '2' ||
+              rawEstado == 'EN PROCESO' ||
+              rawEstado == 'ASIGNADO' ||
+              rawEstado == '3') {
+            estado = 'En Proceso';
+          } else if (rawEstado == '4' ||
+              rawEstado == 'RESUELTO' ||
+              rawEstado == 'CERRADO') {
+            estado = 'Resuelto';
+          }
+
+          Color colorEstado = const Color(0xFFD97706);
+          Color bgEstado = const Color(0xFFFEF3C7);
+          IconData icono = Icons.devices_other_rounded;
+
+          if (estado == 'En Proceso') {
+            colorEstado = const Color(0xFF2563EB);
+            bgEstado = const Color(0xFFDBEAFE);
+          } else if (estado == 'Resuelto') {
+            colorEstado = const Color(0xFF059669);
+            bgEstado = const Color(0xFFD1FAE5);
+          }
+
+          final String tipo = (item['tipo_equipo'] ?? '')
+              .toString()
+              .toUpperCase();
+          if (tipo.contains('PC') || tipo.contains('ESCRITORIO')) {
+            icono = Icons.desktop_windows_rounded;
+          } else if (tipo.contains('IMPRESORA') || tipo.contains('PRINT')) {
+            icono = Icons.print_rounded;
+          } else if (tipo.contains('LAP')) {
+            icono = Icons.laptop_chromebook_rounded;
+          } else if (tipo.contains('TEL')) {
+            icono = Icons.phone_in_talk_rounded;
+          }
+
+          return {
+            'id': 'SSP-${(item['id'] ?? '').toString().padLeft(4, '0')}',
+            'db_id': item['id'],
+            'solicitante': solicitante.toUpperCase(),
+            'ur': urNombre.toUpperCase(),
+            'tipo_equipo': tipo.isNotEmpty ? tipo : 'OTRO',
+            'descripcion': (item['descripcion'] ?? 'SIN DESCRIPCIÓN')
+                .toString()
+                .toUpperCase(),
+            'fecha': fecha,
+            'estado': estado,
+            'color_estado': colorEstado,
+            'bg_estado': bgEstado,
+            'icono': icono,
+            'raw': item,
+          };
+        }).toList();
+
+        if (detectedServerPagination && rawList.length <= 15 && lastPage > 1) {
+          // El servidor soporta paginación
+          setState(() {
+            _tickets = parsedTickets;
+            _currentPage = currentPage;
+            _lastPage = lastPage;
+            _totalTickets = total;
+            _isServerPaginated = true;
+            _isLoading = false;
+          });
+        } else {
+          // Si el servidor NO paginó (devolvió todos los registros juntos)
+          // realizamos paginación en memoria (15 en 15)
+          _allTicketsCache = parsedTickets;
+          _isServerPaginated = false;
+          _paginateLocally(page);
+        }
+
+        _scrollToTop();
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _paginateLocally(int page) {
+    final total = _allTicketsCache.length;
+    final lastPage = (total / 15).ceil();
+    final int currentPage = page.clamp(1, lastPage == 0 ? 1 : lastPage);
+
+    final int startIndex = (currentPage - 1) * 15;
+    int endIndex = startIndex + 15;
+    if (endIndex > total) endIndex = total;
+
+    final List<Map<String, dynamic>> pageTickets = (startIndex < total)
+        ? _allTicketsCache.sublist(startIndex, endIndex)
+        : [];
+
+    setState(() {
+      _tickets = pageTickets;
+      _currentPage = currentPage;
+      _lastPage = lastPage == 0 ? 1 : lastPage;
+      _totalTickets = total;
+      _isLoading = false;
+    });
+
+    _scrollToTop();
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final totalCount = _mockTickets.length;
-    final assignedCount = _mockTickets
+    final assignedCount = _tickets
         .where((t) => t['estado'] == 'En Proceso' || t['estado'] == 'Asignado')
         .length;
-    final closedCount = _mockTickets
+    final closedCount = _tickets
         .where((t) => t['estado'] == 'Resuelto' || t['estado'] == 'Cerrado')
         .length;
 
-    final filteredTickets = _mockTickets.where((t) {
+    final filteredTickets = _tickets.where((t) {
       if (_selectedFilter == 'Total') return true;
       if (_selectedFilter == 'Asignados') {
         return t['estado'] == 'En Proceso' || t['estado'] == 'Asignado';
@@ -113,7 +331,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
               child: Text(
                 _userName.isNotEmpty ? 'Bienvenido $_userName' : 'Bienvenido',
                 style: const TextStyle(
-                  fontSize: 20,
+                  fontSize: 15,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF0A2E5C),
                   letterSpacing: -0.5,
@@ -130,7 +348,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                'Total: ${_mockTickets.length}',
+                'Total: $_totalTickets',
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -168,7 +386,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Listado global de todos los tickets reportados',
+                  'Listado de todos los tickets reportados',
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey.shade600,
@@ -187,7 +405,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
             Expanded(
               child: _buildStatCard(
                 'Total',
-                totalCount.toString(),
+                _totalTickets.toString(),
                 const Color(0xFF0A2E5C), // Navy SSP
                 const Color(0xFF0A2E5C).withValues(alpha: 0.1),
                 Icons.confirmation_number_rounded,
@@ -225,19 +443,99 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
 
         // Listado de Tarjetas
         Expanded(
-          child: filteredTickets.isEmpty
-              ? _buildNoResultsState()
-              : ListView.separated(
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: filteredTickets.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: 16),
-                  itemBuilder: (context, index) {
-                    final ticket = filteredTickets[index];
-                    return _buildTicketCard(ticket);
-                  },
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF0A2E5C)),
+                )
+              : RefreshIndicator(
+                  color: const Color(0xFF0A2E5C),
+                  onRefresh: () => _fetchTickets(page: 1, forceFetch: true),
+                  child: filteredTickets.isEmpty
+                      ? _buildNoResultsState()
+                      : ListView.separated(
+                          controller: _scrollController,
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          itemCount: filteredTickets.length,
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: 16),
+                          itemBuilder: (context, index) {
+                            final ticket = filteredTickets[index];
+                            return _buildTicketCard(ticket);
+                          },
+                        ),
                 ),
         ),
+
+        // Barra de Paginación Tradicional
+        if (_lastPage > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Botón Anterior
+                IconButton(
+                  onPressed: _currentPage > 1 && !_isLoading
+                      ? () => _fetchTickets(page: _currentPage - 1)
+                      : null,
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                  iconSize: 18,
+                  color: const Color(0xFF0A2E5C),
+                  disabledColor: Colors.grey.shade300,
+                  style: IconButton.styleFrom(
+                    backgroundColor: _currentPage > 1
+                        ? const Color(0xFF0A2E5C).withValues(alpha: 0.05)
+                        : Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.all(12),
+                  ),
+                ),
+                // Indicador de Página
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade100),
+                  ),
+                  child: Text(
+                    'Página $_currentPage de $_lastPage',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0A2E5C),
+                    ),
+                  ),
+                ),
+                // Botón Siguiente
+                IconButton(
+                  onPressed: _currentPage < _lastPage && !_isLoading
+                      ? () => _fetchTickets(page: _currentPage + 1)
+                      : null,
+                  icon: const Icon(Icons.arrow_forward_ios_rounded),
+                  iconSize: 18,
+                  color: const Color(0xFF0A2E5C),
+                  disabledColor: Colors.grey.shade300,
+                  style: IconButton.styleFrom(
+                    backgroundColor: _currentPage < _lastPage
+                        ? const Color(0xFF0A2E5C).withValues(alpha: 0.05)
+                        : Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.all(12),
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }

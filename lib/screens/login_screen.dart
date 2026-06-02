@@ -144,6 +144,15 @@ class _LoginScreenState extends State<LoginScreen> {
             if (name != null) {
               await prefs.setString('user_name', name);
             }
+            final dynamic userId = data['user']['id'] ?? data['user']['user_id'];
+            if (userId != null) {
+              await prefs.setInt('user_id', userId is int ? userId : int.tryParse(userId.toString()) ?? 0);
+            }
+          } else {
+            final dynamic userId = data['id'] ?? data['user_id'];
+            if (userId != null) {
+              await prefs.setInt('user_id', userId is int ? userId : int.tryParse(userId.toString()) ?? 0);
+            }
           }
         }
 
