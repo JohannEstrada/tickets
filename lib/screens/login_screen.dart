@@ -139,8 +139,11 @@ class _LoginScreenState extends State<LoginScreen> {
           
           // También podemos guardar el correo o datos del usuario
           await prefs.setString('user_email', _emailController.text.trim());
-          if (data['user'] != null && data['user']['nombre'] != null) {
-            await prefs.setString('user_name', data['user']['nombre']);
+          if (data['user'] != null) {
+            final String? name = data['user']['name'] ?? data['user']['nombre'];
+            if (name != null) {
+              await prefs.setString('user_name', name);
+            }
           }
         }
 

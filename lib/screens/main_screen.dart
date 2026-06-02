@@ -6,8 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
 import 'tickets_total_screen.dart';
-import 'tickets_assigned_screen.dart';
-import 'tickets_closed_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -20,11 +18,14 @@ class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   List<Map<String, dynamic>> _urs = [];
   bool _isLoadingURs = true;
+  List<dynamic> _users = [];
+  bool _isLoadingUsers = true;
 
   @override
   void initState() {
     super.initState();
     _fetchURs();
+    _fetchUsers();
   }
 
   Future<void> _fetchURs() async {
@@ -88,13 +89,66 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  Future<void> _fetchUsers() async {
+    setState(() {
+      _isLoadingUsers = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? token = prefs.getString('auth_token');
+
+      if (token == null) {
+        setState(() {
+          _isLoadingUsers = false;
+        });
+        return;
+      }
+
+      final response = await http.get(
+        Uri.parse('http://tickets.sspmichoacanlocal.gob.mx/api/users/revisar'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        List<dynamic> rawList = [];
+        if (decoded is List) {
+          rawList = decoded;
+        } else if (decoded is Map && decoded['data'] is List) {
+          rawList = decoded['data'];
+        } else if (decoded is Map && decoded['users'] is List) {
+          rawList = decoded['users'];
+        }
+
+        setState(() {
+          _users = rawList.map((item) {
+            return {
+              'id': item['id'],
+              'nombre':
+                  item['nombre'] ?? item['name'] ?? 'Usuario ${item['id']}',
+            };
+          }).toList();
+          _isLoadingUsers = false;
+        });
+      } else {
+        setState(() {
+          _isLoadingUsers = false;
+        });
+      }
+    } catch (_) {
+      setState(() {
+        _isLoadingUsers = false;
+      });
+    }
+  }
+
   // Lista de pantallas que se mostrarán en el cuerpo
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    TicketsTotalScreen(),
-    TicketsAssignedScreen(),
-    TicketsClosedScreen(),
-  ];
+  final List<Widget> _screens = const [HomeScreen(), TicketsTotalScreen()];
 
   @override
   Widget build(BuildContext context) {
@@ -180,34 +234,14 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                 ),
-                Expanded(
-                  child: Center(
-                    child: _buildNavIcon(
-                      Icons.confirmation_number_rounded,
-                      'Total',
-                      _currentIndex == 1,
-                      onTap: () => setState(() => _currentIndex = 1),
-                    ),
-                  ),
-                ),
                 Expanded(child: Center(child: _buildAddTicketButton(context))),
                 Expanded(
                   child: Center(
                     child: _buildNavIcon(
-                      Icons.assignment_ind_rounded,
-                      'Asignados',
-                      _currentIndex == 2,
-                      onTap: () => setState(() => _currentIndex = 2),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Center(
-                    child: _buildNavIcon(
-                      Icons.task_alt_rounded,
-                      'Cerrados',
-                      _currentIndex == 3,
-                      onTap: () => setState(() => _currentIndex = 3),
+                      Icons.confirmation_number_rounded,
+                      'Tickets',
+                      _currentIndex == 1,
+                      onTap: () => setState(() => _currentIndex = 1),
                     ),
                   ),
                 ),
@@ -244,6 +278,7 @@ class _MainScreenState extends State<MainScreen> {
   void _showCreateTicketModal(BuildContext context) {
     String? selectedDeviceType;
     String? selectedUR;
+    String? selectedAssignedTo;
     final nameController = TextEditingController();
     final paternalController = TextEditingController();
     final maternalController = TextEditingController();
@@ -434,6 +469,15 @@ class _MainScreenState extends State<MainScreen> {
                     controller: descriptionController,
                     style: const TextStyle(color: Color(0xFF1E293B)),
                     maxLines: 4,
+                    textCapitalization: TextCapitalization.characters,
+                    inputFormatters: [
+                      TextInputFormatter.withFunction(
+                        (oldValue, newValue) => TextEditingValue(
+                          text: newValue.text.toUpperCase(),
+                          selection: newValue.selection,
+                        ),
+                      ),
+                    ],
                     decoration: InputDecoration(
                       labelText: 'Descripción de la falla',
                       labelStyle: TextStyle(
@@ -544,7 +588,7 @@ class _MainScreenState extends State<MainScreen> {
                       fontSize: 15,
                     ),
                     decoration: InputDecoration(
-                      labelText: 'Ubicación (UR)',
+                      labelText: 'Ubicación',
                       labelStyle: TextStyle(
                         color: Colors.grey.shade600,
                         fontSize: 14,
@@ -610,6 +654,88 @@ class _MainScreenState extends State<MainScreen> {
                       });
                     },
                   ),
+                  const SizedBox(height: 18),
+
+                  // Campo Asignado a (Dropdown)
+                  DropdownButtonFormField<String>(
+                    value: selectedAssignedTo,
+                    dropdownColor: Colors.white,
+                    icon: const Icon(
+                      Icons.arrow_drop_down_rounded,
+                      color: Color(0xFF0A2E5C),
+                      size: 28,
+                    ),
+                    style: const TextStyle(
+                      color: Color(0xFF1E293B),
+                      fontSize: 15,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Asignado a',
+                      labelStyle: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 14,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.assignment_ind_rounded,
+                        color: Color(0xFF0A2E5C),
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF0A2E5C),
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                    items: _isLoadingUsers
+                        ? const [
+                            DropdownMenuItem<String>(
+                              value: null,
+                              enabled: false,
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF0A2E5C),
+                                    ),
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text('Cargando técnicos...'),
+                                ],
+                              ),
+                            ),
+                          ]
+                        : (_users.isEmpty
+                              ? const [
+                                  DropdownMenuItem<String>(
+                                    value: null,
+                                    enabled: false,
+                                    child: Text('Error al cargar técnicos'),
+                                  ),
+                                ]
+                              : _users.map((u) {
+                                  return DropdownMenuItem<String>(
+                                    value: u['id'].toString(),
+                                    child: Text(
+                                      u['nombre'].toString().toUpperCase(),
+                                    ),
+                                  );
+                                }).toList()),
+                    onChanged: (value) {
+                      setModalState(() {
+                        selectedAssignedTo = value;
+                      });
+                    },
+                  ),
                   const SizedBox(height: 28),
 
                   // Botón de Enviar
@@ -626,7 +752,8 @@ class _MainScreenState extends State<MainScreen> {
                                   maternalController.text.trim().isEmpty ||
                                   descriptionController.text.trim().isEmpty ||
                                   selectedDeviceType == null ||
-                                  selectedUR == null) {
+                                  selectedUR == null ||
+                                  selectedAssignedTo == null) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     behavior: SnackBarBehavior.floating,
@@ -697,8 +824,12 @@ class _MainScreenState extends State<MainScreen> {
                                   'tipo_equipo': selectedDeviceType,
                                   'ur_id':
                                       int.tryParse(selectedUR!) ?? selectedUR,
+                                  'user_id':
+                                      int.tryParse(selectedAssignedTo!) ??
+                                      selectedAssignedTo,
                                   'cuartel_id': 1,
-                                  'modulo_origen': 3,
+                                  'modulo_origen': 1,
+                                  'estado_actual': 1,
                                 };
 
                                 print(
@@ -722,6 +853,9 @@ class _MainScreenState extends State<MainScreen> {
                                   'Tipo Equipo: ${requestBody['tipo_equipo']}',
                                 );
                                 print('UR ID: ${requestBody['ur_id']}');
+                                print(
+                                  'User ID (Asignado a): ${requestBody['user_id']}',
+                                );
                                 print('Cuartel: ${requestBody['cuartel_id']}');
                                 print(
                                   'Módulo: ${requestBody['modulo_origen']}',
@@ -750,6 +884,9 @@ class _MainScreenState extends State<MainScreen> {
                                     response.statusCode == 201) {
                                   if (context.mounted) {
                                     Navigator.pop(context);
+                                    setState(() {
+                                      _currentIndex = 1;
+                                    });
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         behavior: SnackBarBehavior.floating,
@@ -983,13 +1120,17 @@ class _MainScreenState extends State<MainScreen> {
                       child: SizedBox(
                         height: 42,
                         child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context); // Cierra el diálogo
-                            Navigator.of(context).pushReplacement(
-                              MaterialPageRoute(
-                                builder: (context) => const LoginScreen(),
-                              ),
-                            );
+                          onPressed: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.remove('auth_token');
+                            if (context.mounted) {
+                              Navigator.pop(context); // Cierra el diálogo
+                              Navigator.of(context).pushReplacement(
+                                MaterialPageRoute(
+                                  builder: (context) => const LoginScreen(),
+                                ),
+                              );
+                            }
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFEF4444),
