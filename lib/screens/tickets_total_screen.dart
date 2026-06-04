@@ -335,7 +335,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
           children: [
             Expanded(
               child: Text(
-                _userName.isNotEmpty ? 'Bienvenido $_userName' : 'Bienvenido',
+                _userName.isNotEmpty ? ' $_userName' : 'Bienvenido',
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
