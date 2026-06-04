@@ -16,7 +16,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
 
   // Variables para la paginación y conexión al API real
   List<Map<String, dynamic>> _tickets =
-      []; // Los 15 tickets de la página actual
+      []; // Los 10 tickets de la página actual
   List<Map<String, dynamic>> _allTicketsCache =
       []; // Caché por si el API no está paginada
   bool _isServerPaginated = false; // Indica si la API paginó correctamente
@@ -73,10 +73,10 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
         return;
       }
 
-      // Solicitamos page y limit=15
+      // Solicitamos page y limit=10
       final response = await http.get(
         Uri.parse(
-          'http://tickets.sspmichoacanlocal.gob.mx/api/tickets/revisar?page=$page&limit=15&per_page=15',
+          'http://tickets.sspmichoacanlocal.gob.mx/api/tickets/revisar?page=$page&limit=10&per_page=10',
         ),
         headers: {
           'Content-Type': 'application/json',
@@ -177,29 +177,20 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
           final String rawEstado =
               (item['estado_actual'] ?? item['estado'] ?? '1')
                   .toString()
+                  .trim()
                   .toUpperCase();
-          String estado = 'Pendiente';
-          if (rawEstado == '1' || rawEstado == 'PENDIENTE') {
-            estado = 'Pendiente';
-          } else if (rawEstado == '2' ||
-              rawEstado == 'EN PROCESO' ||
-              rawEstado == 'ASIGNADO' ||
-              rawEstado == '3') {
-            estado = 'En Proceso';
-          } else if (rawEstado == '4' ||
-              rawEstado == 'RESUELTO' ||
-              rawEstado == 'CERRADO') {
-            estado = 'Resuelto';
+          String estado = 'Asignado';
+          if (rawEstado == '5' || rawEstado == 'CERRADO') {
+            estado = 'Cerrado';
+          } else {
+            estado = 'Asignado';
           }
 
-          Color colorEstado = const Color(0xFFD97706);
-          Color bgEstado = const Color(0xFFFEF3C7);
+          Color colorEstado = const Color(0xFF2563EB);
+          Color bgEstado = const Color(0xFFDBEAFE);
           IconData icono = Icons.devices_other_rounded;
 
-          if (estado == 'En Proceso') {
-            colorEstado = const Color(0xFF2563EB);
-            bgEstado = const Color(0xFFDBEAFE);
-          } else if (estado == 'Resuelto') {
+          if (estado == 'Cerrado') {
             colorEstado = const Color(0xFF059669);
             bgEstado = const Color(0xFFD1FAE5);
           }
@@ -235,7 +226,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
           };
         }).toList();
 
-        if (detectedServerPagination && rawList.length <= 15 && lastPage > 1) {
+        if (detectedServerPagination && rawList.length <= 10 && lastPage > 1) {
           // El servidor soporta paginación
           setState(() {
             _tickets = parsedTickets;
@@ -247,7 +238,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
           });
         } else {
           // Si el servidor NO paginó (devolvió todos los registros juntos)
-          // realizamos paginación en memoria (15 en 15)
+          // realizamos paginación en memoria (10 en 10)
           _allTicketsCache = parsedTickets;
           _isServerPaginated = false;
           _paginateLocally(page);
@@ -266,24 +257,38 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
     }
   }
 
+  List<Map<String, dynamic>> _getFilteredTickets() {
+    return _allTicketsCache.where((t) {
+      if (_selectedFilter == 'Total') return true;
+      if (_selectedFilter == 'Asignados') {
+        return t['estado'] == 'Asignado';
+      }
+      if (_selectedFilter == 'Cerrados') {
+        return t['estado'] == 'Cerrado';
+      }
+      return true;
+    }).toList();
+  }
+
   void _paginateLocally(int page) {
-    final total = _allTicketsCache.length;
-    final lastPage = (total / 15).ceil();
+    final filteredList = _getFilteredTickets();
+    final total = filteredList.length;
+    final lastPage = (total / 10).ceil();
     final int currentPage = page.clamp(1, lastPage == 0 ? 1 : lastPage);
 
-    final int startIndex = (currentPage - 1) * 15;
-    int endIndex = startIndex + 15;
+    final int startIndex = (currentPage - 1) * 10;
+    int endIndex = startIndex + 10;
     if (endIndex > total) endIndex = total;
 
     final List<Map<String, dynamic>> pageTickets = (startIndex < total)
-        ? _allTicketsCache.sublist(startIndex, endIndex)
+        ? filteredList.sublist(startIndex, endIndex)
         : [];
 
     setState(() {
       _tickets = pageTickets;
       _currentPage = currentPage;
       _lastPage = lastPage == 0 ? 1 : lastPage;
-      _totalTickets = total;
+      _totalTickets = _allTicketsCache.length;
       _isLoading = false;
     });
 
@@ -302,20 +307,21 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final assignedCount = _tickets
-        .where((t) => t['estado'] == 'En Proceso' || t['estado'] == 'Asignado')
+    final countSource = _isServerPaginated ? _tickets : _allTicketsCache;
+    final assignedCount = countSource
+        .where((t) => t['estado'] == 'Asignado')
         .length;
-    final closedCount = _tickets
-        .where((t) => t['estado'] == 'Resuelto' || t['estado'] == 'Cerrado')
+    final closedCount = countSource
+        .where((t) => t['estado'] == 'Cerrado')
         .length;
 
     final filteredTickets = _tickets.where((t) {
       if (_selectedFilter == 'Total') return true;
       if (_selectedFilter == 'Asignados') {
-        return t['estado'] == 'En Proceso' || t['estado'] == 'Asignado';
+        return t['estado'] == 'Asignado';
       }
       if (_selectedFilter == 'Cerrados') {
-        return t['estado'] == 'Resuelto' || t['estado'] == 'Cerrado';
+        return t['estado'] == 'Cerrado';
       }
       return true;
     }).toList();
@@ -358,45 +364,6 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
-
-        // Cuadro descriptivo del Subtítulo
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade100, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.01),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.info_outline_rounded,
-                color: Color(0xFF0A2E5C),
-                size: 20,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Listado de todos los tickets reportados',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade600,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 20),
 
         // Fila de Estadísticas / Contadores rápidos
@@ -410,7 +377,14 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                 const Color(0xFF0A2E5C).withValues(alpha: 0.1),
                 Icons.confirmation_number_rounded,
                 isSelected: _selectedFilter == 'Total',
-                onTap: () => setState(() => _selectedFilter = 'Total'),
+                onTap: () {
+                  setState(() {
+                    _selectedFilter = 'Total';
+                  });
+                  if (!_isServerPaginated) {
+                    _paginateLocally(1);
+                  }
+                },
               ),
             ),
             const SizedBox(width: 10),
@@ -422,7 +396,14 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                 const Color(0xFFDBEAFE),
                 Icons.assignment_ind_rounded,
                 isSelected: _selectedFilter == 'Asignados',
-                onTap: () => setState(() => _selectedFilter = 'Asignados'),
+                onTap: () {
+                  setState(() {
+                    _selectedFilter = 'Asignados';
+                  });
+                  if (!_isServerPaginated) {
+                    _paginateLocally(1);
+                  }
+                },
               ),
             ),
             const SizedBox(width: 10),
@@ -434,7 +415,14 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                 const Color(0xFFD1FAE5),
                 Icons.task_alt_rounded,
                 isSelected: _selectedFilter == 'Cerrados',
-                onTap: () => setState(() => _selectedFilter = 'Cerrados'),
+                onTap: () {
+                  setState(() {
+                    _selectedFilter = 'Cerrados';
+                  });
+                  if (!_isServerPaginated) {
+                    _paginateLocally(1);
+                  }
+                },
               ),
             ),
           ],
@@ -640,27 +628,6 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                 children: [
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFF0A2E5C,
-                          ).withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          ticket['id'],
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF0A2E5C),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
                       Text(
                         ticket['fecha'],
                         style: TextStyle(
