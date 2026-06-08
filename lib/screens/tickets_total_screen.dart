@@ -13,6 +13,7 @@ class TicketsTotalScreen extends StatefulWidget {
 class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
   String _userName = '';
   String _selectedFilter = 'Total';
+  bool _isAscending = false;
 
   // Variables para la paginación y conexión al API real
   List<Map<String, dynamic>> _tickets =
@@ -150,11 +151,12 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
 
           final String rawDate = item['created_at'] ?? item['fecha'] ?? '';
           String fecha = 'Fecha no disponible';
+          DateTime? rawDateTime;
           if (rawDate.isNotEmpty) {
             try {
-              final parsedDate = DateTime.parse(rawDate);
+              rawDateTime = DateTime.parse(rawDate);
               fecha =
-                  '${parsedDate.day.toString().padLeft(2, '0')}/${parsedDate.month.toString().padLeft(2, '0')}/${parsedDate.year} • ${parsedDate.hour.toString().padLeft(2, '0')}:${parsedDate.minute.toString().padLeft(2, '0')}';
+                  '${rawDateTime.day.toString().padLeft(2, '0')}/${rawDateTime.month.toString().padLeft(2, '0')}/${rawDateTime.year} • ${rawDateTime.hour.toString().padLeft(2, '0')}:${rawDateTime.minute.toString().padLeft(2, '0')}';
             } catch (_) {
               fecha = rawDate;
             }
@@ -218,6 +220,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                 .toString()
                 .toUpperCase(),
             'fecha': fecha,
+            'raw_date_time': rawDateTime,
             'estado': estado,
             'color_estado': colorEstado,
             'bg_estado': bgEstado,
@@ -225,6 +228,8 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
             'raw': item,
           };
         }).toList();
+
+        _sortList(parsedTickets);
 
         if (detectedServerPagination && rawList.length <= 10 && lastPage > 1) {
           // El servidor soporta paginación
@@ -254,6 +259,26 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  void _sortList(List<Map<String, dynamic>> list) {
+    list.sort((a, b) {
+      final DateTime? dateA = a['raw_date_time'];
+      final DateTime? dateB = b['raw_date_time'];
+      if (dateA == null && dateB == null) return 0;
+      if (dateA == null) return 1;
+      if (dateB == null) return -1;
+      return _isAscending ? dateA.compareTo(dateB) : dateB.compareTo(dateA);
+    });
+  }
+
+  void _sortAndPaginate() {
+    if (_isServerPaginated) {
+      _sortList(_tickets);
+    } else {
+      _sortList(_allTicketsCache);
+      _paginateLocally(_currentPage);
     }
   }
 
@@ -428,6 +453,69 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
           ],
         ),
         const SizedBox(height: 20),
+
+        // Filtro y Ordenamiento de Fecha
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _isAscending ? 'Orden: Más antiguos' : 'Orden: Más recientes',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    _isAscending = !_isAscending;
+                    _sortAndPaginate();
+                  });
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0A2E5C).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF0A2E5C).withValues(alpha: 0.15),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isAscending
+                            ? Icons.arrow_upward_rounded
+                            : Icons.arrow_downward_rounded,
+                        size: 16,
+                        color: const Color(0xFF0A2E5C),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _isAscending ? 'Más antiguos' : 'Más recientes',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF0A2E5C),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
 
         // Listado de Tarjetas
         Expanded(
@@ -776,32 +864,63 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
               child: Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        // Acción de simulación de ver detalles
-                        _showTicketDetailsDialog(context, ticket);
-                      },
-                      icon: const Icon(Icons.remove_red_eye_outlined, size: 16),
-                      label: const Text(
-                        'CERRAR TICKET',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF0A2E5C),
-                        side: BorderSide(
-                          color: const Color(0xFF0A2E5C).withValues(alpha: 0.3),
-                          width: 1.5,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
+                    child: ticket['estado'] == 'Asignado'
+                        ? ElevatedButton.icon(
+                            onPressed: () {
+                              _showCloseTicketDialog(context, ticket);
+                            },
+                            icon: const Icon(
+                              Icons.check_circle_outline_rounded,
+                              size: 16,
+                            ),
+                            label: const Text(
+                              'CERRAR TICKET',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0A2E5C),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          )
+                        : OutlinedButton.icon(
+                            onPressed: () {
+                              _showTicketDetailsDialog(context, ticket);
+                            },
+                            icon: const Icon(
+                              Icons.remove_red_eye_outlined,
+                              size: 16,
+                            ),
+                            label: const Text(
+                              'VER TICKET',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF059669),
+                              side: BorderSide(
+                                color: const Color(
+                                  0xFF059669,
+                                ).withValues(alpha: 0.3),
+                                width: 1.5,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
                   ),
                 ],
               ),
@@ -809,6 +928,62 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // Diálogo para la acción de cerrar un ticket
+  void _showCloseTicketDialog(
+    BuildContext context,
+    Map<String, dynamic> ticket,
+  ) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          elevation: 15,
+          backgroundColor: Colors.white,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 400),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Cerrar Ticket ${ticket['id']}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0A2E5C),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: Colors.grey),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Text(
+                      'Formulario de cierre (Próximamente)',
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1031,34 +1206,54 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
     );
   }
 
-  // Estado vacío para búsquedas sin resultados
+  // Estado vacío para búsquedas sin resultados o filtros sin tickets
   Widget _buildNoResultsState() {
+    String title = 'Sin resultados coincidentes';
+    String subtitle = 'Intenta buscar con otros términos o palabras clave.';
+    IconData icon = Icons.search_off_rounded;
+
+    if (_selectedFilter == 'Asignados') {
+      title = 'No hay ningún ticket asignado por el momento';
+      subtitle = 'No tienes reportes pendientes de atención en este momento.';
+      icon = Icons.assignment_turned_in_rounded;
+    } else if (_selectedFilter == 'Cerrados') {
+      title = 'No hay ningún ticket cerrado por el momento';
+      subtitle = 'No tienes reportes resueltos registrados en este momento.';
+      icon = Icons.task_alt_rounded;
+    } else if (_selectedFilter == 'Total') {
+      title = 'No se encontraron tickets registrados';
+      subtitle =
+          'No hay ningún reporte registrado en el sistema por el momento.';
+      icon = Icons.folder_open_rounded;
+    }
+
     return Center(
       child: SingleChildScrollView(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.search_off_rounded,
-              size: 70,
-              color: Colors.grey.shade300,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Sin resultados coincidentes',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 70, color: Colors.grey.shade300),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                ),
+                textAlign: TextAlign.center,
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Intenta buscar con otros términos o palabras clave.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-              textAlign: TextAlign.center,
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
     );
