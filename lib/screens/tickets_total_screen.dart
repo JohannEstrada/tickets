@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 class TicketsTotalScreen extends StatefulWidget {
   const TicketsTotalScreen({super.key});
@@ -27,6 +29,14 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
   bool _isLoading = true;
   final ScrollController _scrollController = ScrollController();
 
+  // Variables para la validación de credencial QR en cerrado de ticket
+  bool _credencialValidada = false;
+  String? _nombreConductorValidado;
+  String? _vigenciaCredencial;
+  final MobileScannerController _scannerController = MobileScannerController();
+  final TextEditingController _procedimientoController =
+      TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -37,6 +47,8 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _scannerController.dispose();
+    _procedimientoController.dispose();
     super.dispose();
   }
 
@@ -369,22 +381,6 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0A2E5C).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                'Total: $_totalTickets',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0A2E5C),
-                ),
               ),
             ),
           ],
@@ -931,57 +927,748 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
     );
   }
 
+  // Método auxiliar para mostrar alertas de tipo SnackBar
+  void _mostrarMensaje(String mensaje, {Color color = Colors.red}) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(mensaje),
+          backgroundColor: color,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  Future<void> _escanearQRValidarCredencial({VoidCallback? onUpdate}) async {
+    final controller = _scannerController;
+
+    // Mostrar diálogo con cámara directamente
+    await showDialog(
+      context: context,
+      barrierDismissible: false, // No se puede cerrar pulsando fuera del cuadro
+      builder: (context) => Dialog(
+        child: SizedBox(
+          width: MediaQuery.of(context).size.width * 0.9, // 90% del ancho
+          height: MediaQuery.of(context).size.height * 0.7, // 70% de la altura
+          child: Column(
+            children: [
+              AppBar(
+                title: const Text('Escanear Credencial'),
+                backgroundColor: const Color(0xFF0A2E5C),
+                foregroundColor: Colors.white,
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      controller.stop();
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ],
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    // Cámara de escaneo
+                    MobileScanner(
+                      controller: controller,
+                      onDetect: (capture) {
+                        final List<Barcode> barcodes = capture.barcodes;
+                        if (barcodes.isNotEmpty &&
+                            barcodes.first.rawValue != null) {
+                          final String rawValue = barcodes.first.rawValue!
+                              .trim();
+
+                          // Detiene la cámara y cierra el modal
+                          controller.stop();
+                          Navigator.of(context).pop();
+
+                          // Llama a la validación directa
+                          _validarQRDirectamente(rawValue, onUpdate: onUpdate);
+                        }
+                      },
+                    ),
+                    // Overlay guía para centrar el QR
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.3),
+                        ),
+                        child: Center(
+                          child: Container(
+                            width: 250,
+                            height: 250,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: const Color(
+                                  0xFF0A2E5C,
+                                ), // Borde azul corporativo
+                                width: 3,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.qr_code_scanner,
+                                  size: 50,
+                                  color: Color(0xFF0A2E5C),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Alinee el QR aquí',
+                                  style: TextStyle(
+                                    color: Color(0xFF0A2E5C),
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _validarQRDirectamente(
+    String qrCompleto, {
+    VoidCallback? onUpdate,
+  }) async {
+    print(' INICIO COMPLETO DE VALIDACIÓN QR');
+    print(' QR completo recibido: "$qrCompleto"');
+
+    // DETECTAR TIPO DE QR
+    if (qrCompleto.startsWith('http://') || qrCompleto.startsWith('https://')) {
+      // QR NUEVO: Es una URL - extraer ID y consultar API
+      print(' TIPO DETECTADO: QR CON URL (FORMATO NUEVO)');
+
+      final uri = Uri.tryParse(qrCompleto);
+      final String? idExtraido = uri?.queryParameters['id'];
+
+      if (idExtraido != null && idExtraido.isNotEmpty) {
+        await _enviarDatosApi(idExtraido, onUpdate: onUpdate);
+      } else {
+        _mostrarMensaje(
+          'No se encontró un ID válido en el código QR',
+          color: Colors.red,
+        );
+      }
+    } else if (qrCompleto.contains('NOMBRE:') &&
+        qrCompleto.contains('VIGENCIA:')) {
+      // QR ANTIGUO: Es texto plano - procesar localmente
+      print('Tipo detectado: QR de texto plano (formato antiguo)');
+
+      // Extraer vigencia del QR
+      String? vigenciaExtraida;
+      if (qrCompleto.contains('VIGENCIA:')) {
+        final RegExp vigenciaRegex = RegExp(r'VIGENCIA:([^|]+)');
+        final Match? match = vigenciaRegex.firstMatch(qrCompleto);
+        if (match != null) {
+          vigenciaExtraida = match.group(1)?.trim();
+        }
+      }
+
+      // Extraer nombre del QR
+      String? nombreExtraido;
+      if (qrCompleto.contains('NOMBRE:')) {
+        final RegExp nombreRegex = RegExp(r'NOMBRE:([^|]+)');
+        final Match? match = nombreRegex.firstMatch(qrCompleto);
+        if (match != null) {
+          nombreExtraido = match.group(1)?.trim();
+        }
+      }
+
+      // Validar que ambos datos fueron extraídos correctamente
+      if (nombreExtraido == null || nombreExtraido.isEmpty) {
+        _mostrarMensaje(
+          'El QR no contiene información de nombre',
+          color: Colors.red,
+        );
+        return;
+      }
+
+      if (vigenciaExtraida == null || vigenciaExtraida.isEmpty) {
+        _mostrarMensaje(
+          'El QR no contiene información de vigencia',
+          color: Colors.red,
+        );
+        return;
+      }
+
+      // Parsear vigencia del formato de texto plano (Ej. "MARZO 2027")
+      final RegExp mesAnoRegex = RegExp(r'([A-Z]+)\s+(\d{4})');
+      final Match? match = mesAnoRegex.firstMatch(
+        vigenciaExtraida.toUpperCase(),
+      );
+
+      if (match == null) {
+        _mostrarMensaje('Formato de vigencia no reconocido', color: Colors.red);
+        setState(() {
+          _credencialValidada = false;
+          _nombreConductorValidado = null;
+          _vigenciaCredencial = null;
+        });
+        onUpdate?.call();
+        return;
+      }
+
+      final String mes = match.group(1)!;
+      final int ano = int.parse(match.group(2)!);
+
+      final Map<String, int> meses = {
+        'ENERO': 1,
+        'FEBRERO': 2,
+        'MARZO': 3,
+        'ABRIL': 4,
+        'MAYO': 5,
+        'JUNIO': 6,
+        'JULIO': 7,
+        'AGOSTO': 8,
+        'SEPTIEMBRE': 9,
+        'OCTUBRE': 10,
+        'NOVIEMBRE': 11,
+        'DICIEMBRE': 12,
+      };
+
+      final int mesNumero = meses[mes] ?? 1;
+      final DateTime fechaVigencia = DateTime(
+        ano,
+        mesNumero + 1,
+        0,
+      ); // Último día del mes obtenido
+      final DateTime fechaActual = DateTime.now();
+
+      // Verificar si está vencida
+      if (fechaActual.isAfter(fechaVigencia)) {
+        // CREDENCIAL VENCIDA
+        setState(() {
+          _credencialValidada = false;
+          _nombreConductorValidado = null;
+          _vigenciaCredencial = null;
+        });
+        onUpdate?.call();
+        _mostrarDialogoCredencialVencida(vigenciaExtraida);
+      } else {
+        // CREDENCIAL VIGENTE
+        setState(() {
+          _credencialValidada = true;
+          _nombreConductorValidado = nombreExtraido;
+          _vigenciaCredencial = vigenciaExtraida;
+        });
+        onUpdate?.call();
+        _mostrarMensaje(
+          'CREDENCIAL VIGENTE\nPersonal atendido: $nombreExtraido',
+          color: Colors.green,
+        );
+      }
+    } else {
+      _mostrarMensaje(
+        'QR no válido o formato no reconocido',
+        color: Colors.red,
+      );
+    }
+  }
+
+  Future<void> _enviarDatosApi(String id, {VoidCallback? onUpdate}) async {
+    final url = Uri.parse(
+      'http://187.216.141.163:8080/api_siarh/api_estatus_conductor.php',
+    );
+    _mostrarMensaje('Consultando credencial...', color: Colors.blue);
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: json.encode({'action': 'get_conductor', 'id': id}),
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+
+        if (responseData['success'] == true && responseData['data'] != null) {
+          final Map<String, dynamic> conductorData = responseData['data'];
+
+          // Extraer nombre completo
+          final String nombreCompleto =
+              '${conductorData['NOMBRE'] ?? ''} ${conductorData['PATERNO'] ?? ''} ${conductorData['MATERNO'] ?? ''}'
+                  .trim();
+          final String vigenciaCredencial = conductorData['VIGENCIA'] ?? 'N/A';
+
+          // Validar vigencia por fecha (3 posibles formatos recibidos del servidor)
+          bool fechaVigente = false;
+          try {
+            // MÉTODO 1: Intentar formato completo con día (DD/MES/YYYY) -> Ej. "31/MAR/2027"
+            final RegExp fechaRegexCompleta = RegExp(
+              r'(\d{1,2})/([A-Z]{3})/(\d{4})',
+            );
+            final Match? matchCompleto = fechaRegexCompleta.firstMatch(
+              vigenciaCredencial,
+            );
+
+            final Map<String, int> mesesAbrev = {
+              'ENE': 1,
+              'FEB': 2,
+              'MAR': 3,
+              'ABR': 4,
+              'MAY': 5,
+              'JUN': 6,
+              'JUL': 7,
+              'AGO': 8,
+              'SEP': 9,
+              'OCT': 10,
+              'NOV': 11,
+              'DIC': 12,
+            };
+
+            if (matchCompleto != null) {
+              final int dia = int.parse(matchCompleto.group(1)!);
+              final String mesStr = matchCompleto.group(2)!;
+              final int ano = int.parse(matchCompleto.group(3)!);
+
+              final int mes = mesesAbrev[mesStr] ?? 1;
+              final DateTime fechaVigencia = DateTime(
+                ano,
+                mes,
+                dia,
+                23,
+                59,
+                59,
+              );
+              fechaVigente = DateTime.now().isBefore(fechaVigencia);
+            } else {
+              // MÉTODO 2: Intentar formato sin día (MES/YYYY) -> Ej. "MAR/2027"
+              final RegExp fechaRegexMes = RegExp(r'([A-Z]{3})/(\d{4})');
+              final Match? matchMes = fechaRegexMes.firstMatch(
+                vigenciaCredencial,
+              );
+
+              if (matchMes != null) {
+                final String mesStr = matchMes.group(1)!;
+                final int ano = int.parse(matchMes.group(2)!);
+
+                final int mes = mesesAbrev[mesStr] ?? 1;
+                final DateTime fechaVigencia = DateTime(
+                  ano,
+                  mes + 1,
+                  0,
+                  23,
+                  59,
+                  59,
+                ); // Fin de mes
+                fechaVigente = DateTime.now().isBefore(fechaVigencia);
+              } else {
+                // MÉTODO 3: Intentar formato con espacio (MES YYYY) -> Ej. "MAR 2027"
+                final RegExp fechaRegexEspacio = RegExp(
+                  r'([A-Z]{3})\s+(\d{4})',
+                );
+                final Match? matchEspacio = fechaRegexEspacio.firstMatch(
+                  vigenciaCredencial,
+                );
+
+                if (matchEspacio != null) {
+                  final String mesStr = matchEspacio.group(1)!;
+                  final int ano = int.parse(matchEspacio.group(2)!);
+
+                  final int mes = mesesAbrev[mesStr] ?? 1;
+                  final DateTime fechaVigencia = DateTime(
+                    ano,
+                    mes + 1,
+                    0,
+                    23,
+                    59,
+                    59,
+                  );
+                  fechaVigente = DateTime.now().isBefore(fechaVigencia);
+                }
+              }
+            }
+          } catch (e) {
+            print('🔥 Error parsing date: $e');
+          }
+
+          // Evaluar vigencia
+          if (fechaVigente) {
+            setState(() {
+              _credencialValidada = true;
+              _nombreConductorValidado = nombreCompleto;
+              _vigenciaCredencial = vigenciaCredencial;
+            });
+            onUpdate?.call();
+
+            _mostrarMensaje(
+              'CREDENCIAL VIGENTE\nPersonal: $nombreCompleto',
+              color: Colors.green,
+            );
+          } else {
+            setState(() {
+              _credencialValidada = false;
+              _nombreConductorValidado = null;
+              _vigenciaCredencial = null;
+            });
+            onUpdate?.call();
+            _mostrarDialogoCredencialVencida(vigenciaCredencial);
+          }
+        } else {
+          final String message =
+              responseData['message'] ??
+              'No se encontraron detalles para la credencial.';
+          _mostrarMensaje('Error en la API: $message', color: Colors.red);
+        }
+      } else {
+        _mostrarMensaje(
+          'Error al consultar la credencial: ${response.statusCode}',
+          color: Colors.red,
+        );
+      }
+    } catch (e) {
+      _mostrarMensaje('Error de conexión al API: $e', color: Colors.red);
+    }
+  }
+
+  void _mostrarDialogoCredencialVencida(String vigenciaExtraida) {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Obligatorio pulsar botón para cerrar
+      builder: (context) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 450),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.error_outline,
+                  size: 40,
+                  color: Colors.red,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Credencial Vencida',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'No se puede regustrar el servicio técnico',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Color(0xFF333333)),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'La credencial está vencida\nVigencia: $vigenciaExtraida',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Cerrar diálogo
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'Regresar',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // Diálogo para la acción de cerrar un ticket
   void _showCloseTicketDialog(
     BuildContext context,
     Map<String, dynamic> ticket,
   ) {
+    // Limpiar variables de validación de credencial QR al abrir el diálogo
+    setState(() {
+      _credencialValidada = false;
+      _nombreConductorValidado = null;
+      _vigenciaCredencial = null;
+    });
+    _procedimientoController.clear();
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-          elevation: 15,
-          backgroundColor: Colors.white,
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 400),
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              elevation: 15,
+              backgroundColor: Colors.white,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500),
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Cerrar Ticket ${ticket['id']}',
-                      style: const TextStyle(
-                        fontSize: 18,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Cerrar Ticket',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0A2E5C),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.grey,
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'DESCRIPCIÓN COMPLETA DE LA FALLA:',
+                      style: TextStyle(
+                        fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF0A2E5C),
+                        color: Colors.grey,
+                        letterSpacing: 0.5,
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.grey),
-                      onPressed: () => Navigator.pop(context),
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey.shade100),
+                      ),
+                      child: Text(
+                        ticket['descripcion'] ?? 'Sin descripción disponible',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF334155),
+                          height: 1.5,
+                        ),
+                      ),
                     ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'PROCEDIMIENTO HECHO:',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _procedimientoController,
+                      maxLines: 2,
+                      minLines: 2,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF1E293B),
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'[a-zA-ZÁÉÍÓÚÑáéíóúñ\s]'),
+                        ),
+                        TextInputFormatter.withFunction(
+                          (oldValue, newValue) => TextEditingValue(
+                            text: newValue.text.toUpperCase(),
+                            selection: newValue.selection,
+                          ),
+                        ),
+                      ],
+                      decoration: InputDecoration(
+                        hintText:
+                            'Escriba aquí los detalles del procedimiento realizado...',
+                        hintStyle: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade400,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: Colors.grey.shade200),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF0A2E5C),
+                            width: 1.5,
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.all(14),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Campo de validación de credencial QR
+                    const Text(
+                      'VALIDACIÓN DE CREDENCIAL:',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: _credencialValidada
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.green.withValues(alpha: 0.1),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ]
+                              : [],
+                        ),
+                        child: ElevatedButton.icon(
+                          onPressed: () => _escanearQRValidarCredencial(
+                            onUpdate: () => setStateDialog(() {}),
+                          ),
+                          icon: Icon(
+                            _credencialValidada
+                                ? Icons.check_circle_rounded
+                                : Icons.qr_code_scanner_rounded,
+                            color: Colors.white,
+                          ),
+                          label: Text(
+                            _credencialValidada
+                                ? 'Credencial Validada'
+                                : 'Escanear QR para Validar',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _credencialValidada
+                                ? const Color(0xFF059669) // Verde elegante
+                                : const Color(0xFF0A2E5C), // Azul corporativo
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (_credencialValidada &&
+                        _nombreConductorValidado != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFDCFCE7)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.person_rounded,
+                              color: Color(0xFF16A34A),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'PERSONAL VALIDADO',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF15803D),
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _nombreConductorValidado!,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF14532D),
+                                    ),
+                                  ),
+                                  if (_vigenciaCredencial != null) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Vigencia: $_vigenciaCredencial',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF166534),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 20),
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 40),
-                    child: Text(
-                      'Formulario de cierre (Próximamente)',
-                      style: TextStyle(fontSize: 14, color: Colors.grey),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -1010,26 +1697,8 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
               children: [
                 // Fila superior de detalles rápidos
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0A2E5C).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        ticket['id'],
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF0A2E5C),
-                        ),
-                      ),
-                    ),
                     IconButton(
                       icon: const Icon(Icons.close_rounded, color: Colors.grey),
                       onPressed: () => Navigator.pop(context),
