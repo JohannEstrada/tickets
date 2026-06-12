@@ -274,7 +274,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        '¡Hola, $greetingName!',
+                        '¡Hola, $greetingName!, buenas tardes',
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
