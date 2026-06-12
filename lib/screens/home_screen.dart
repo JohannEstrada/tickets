@@ -26,10 +26,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadDashboardData();
   }
 
-  Future<void> _loadDashboardData() async {
-    setState(() {
-      _isLoading = true;
-    });
+  Future<void> _loadDashboardData({bool isRefresh = false}) async {
+    if (!isRefresh) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -242,11 +244,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ? _userName.split(' ')[0]
         : 'Técnico';
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return RefreshIndicator(
+      color: const Color(0xFF0A2E5C),
+      onRefresh: () => _loadDashboardData(isRefresh: true),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Banner de Bienvenida Premium
           Container(
             width: double.infinity,
@@ -446,6 +453,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 24),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
