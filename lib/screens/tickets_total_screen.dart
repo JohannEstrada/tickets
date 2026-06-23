@@ -31,6 +31,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
 
   // Variables para la validación de credencial QR en cerrado de ticket
   bool _credencialValidada = false;
+  bool _equipoValidado = false;
   String? _nombreConductorValidado;
   String? _vigenciaCredencial;
   final MobileScannerController _scannerController = MobileScannerController();
@@ -1420,6 +1421,7 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
     // Limpiar variables de validación de credencial QR al abrir el diálogo
     setState(() {
       _credencialValidada = false;
+      _equipoValidado = false;
       _nombreConductorValidado = null;
       _vigenciaCredencial = null;
     });
@@ -1544,6 +1546,74 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                           ),
                         ),
                         contentPadding: const EdgeInsets.all(14),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Campo de validación de equipo resguardado
+                    const Text(
+                      'VALIDACIÓN DE EQUIPO:',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: _equipoValidado
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.green.withValues(alpha: 0.1),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ]
+                              : [],
+                        ),
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _equipoValidado = !_equipoValidado;
+                            });
+                            setStateDialog(() {});
+                            debugPrint(
+                              'Escaneo de equipo presionado (Estado mock: $_equipoValidado)',
+                            );
+                          },
+                          icon: Icon(
+                            _equipoValidado
+                                ? Icons.check_circle_rounded
+                                : Icons.qr_code_scanner_rounded,
+                            color: Colors.white,
+                          ),
+                          label: Text(
+                            _equipoValidado
+                                ? 'Equipo Validado'
+                                : 'Escanear QR de Equipo',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _equipoValidado
+                                ? const Color(0xFF059669) // Verde elegante
+                                : const Color(0xFF0A2E5C), // Azul corporativo
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),
