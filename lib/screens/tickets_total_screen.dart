@@ -941,6 +941,103 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
     }
   }
 
+  Future<void> _escanearQREquipo({VoidCallback? onUpdate}) async {
+    final controller = _scannerController;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        child: SizedBox(
+          width: MediaQuery.of(context).size.width * 0.9,
+          height: MediaQuery.of(context).size.height * 0.7,
+          child: Column(
+            children: [
+              AppBar(
+                title: const Text('Escanear QR de Equipo'),
+                backgroundColor: const Color(0xFF0A2E5C),
+                foregroundColor: Colors.white,
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      controller.stop();
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ],
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    MobileScanner(
+                      controller: controller,
+                      onDetect: (capture) {
+                        final List<Barcode> barcodes = capture.barcodes;
+                        if (barcodes.isNotEmpty &&
+                            barcodes.first.rawValue != null) {
+                          final String rawValue = barcodes.first.rawValue!.trim();
+
+                          controller.stop();
+                          Navigator.of(context).pop();
+
+                          setState(() {
+                            _equipoValidado = true;
+                          });
+                          onUpdate?.call();
+                          debugPrint('QR de equipo escaneado: $rawValue');
+                        }
+                      },
+                    ),
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.3),
+                        ),
+                        child: Center(
+                          child: Container(
+                            width: 250,
+                            height: 250,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: const Color(0xFF0A2E5C),
+                                width: 3,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.qr_code_scanner,
+                                  size: 50,
+                                  color: Color(0xFF0A2E5C),
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Alinee el QR aquí',
+                                  style: TextStyle(
+                                    color: Color(0xFF0A2E5C),
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _escanearQRValidarCredencial({VoidCallback? onUpdate}) async {
     final controller = _scannerController;
 
@@ -1418,10 +1515,13 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
     BuildContext context,
     Map<String, dynamic> ticket,
   ) {
+    final String tipoEquipo = (ticket['tipo_equipo'] ?? '').toString().toUpperCase();
+    final bool requiereEquipo = !tipoEquipo.contains('LAP') && !tipoEquipo.contains('OTRO');
+
     // Limpiar variables de validación de credencial QR al abrir el diálogo
     setState(() {
       _credencialValidada = false;
-      _equipoValidado = false;
+      _equipoValidado = !requiereEquipo;
       _nombreConductorValidado = null;
       _vigenciaCredencial = null;
     });
@@ -1548,74 +1648,69 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                         contentPadding: const EdgeInsets.all(14),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    // Campo de validación de equipo resguardado
-                    const Text(
-                      'VALIDACIÓN DE EQUIPO:',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: _equipoValidado
-                              ? [
-                                  BoxShadow(
-                                    color: Colors.green.withValues(alpha: 0.1),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ]
-                              : [],
+                    if (requiereEquipo) ...[
+                      const SizedBox(height: 20),
+                      // Campo de validación de equipo resguardado
+                      const Text(
+                        'VALIDACIÓN DE EQUIPO:',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                          letterSpacing: 0.5,
                         ),
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              _equipoValidado = !_equipoValidado;
-                            });
-                            setStateDialog(() {});
-                            debugPrint(
-                              'Escaneo de equipo presionado (Estado mock: $_equipoValidado)',
-                            );
-                          },
-                          icon: Icon(
-                            _equipoValidado
-                                ? Icons.check_circle_rounded
-                                : Icons.qr_code_scanner_rounded,
-                            color: Colors.white,
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: _equipoValidado
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.green.withValues(alpha: 0.1),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ]
+                                : [],
                           ),
-                          label: Text(
-                            _equipoValidado
-                                ? 'Equipo Validado'
-                                : 'Escanear QR de Equipo',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _escanearQREquipo(
+                              onUpdate: () => setStateDialog(() {}),
                             ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _equipoValidado
-                                ? const Color(0xFF059669) // Verde elegante
-                                : const Color(0xFF0A2E5C), // Azul corporativo
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                            icon: Icon(
+                              _equipoValidado
+                                  ? Icons.check_circle_rounded
+                                  : Icons.qr_code_scanner_rounded,
+                              color: Colors.white,
+                            ),
+                            label: Text(
+                              _equipoValidado
+                                  ? 'Equipo Validado'
+                                  : 'Escanear QR de Equipo',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _equipoValidado
+                                  ? const Color(0xFF059669) // Verde elegante
+                                  : const Color(0xFF0A2E5C), // Azul corporativo
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16)),
                             ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                     const SizedBox(height: 20),
                     // Campo de validación de credencial QR
                     const Text(
