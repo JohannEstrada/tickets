@@ -1679,12 +1679,17 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                                     isSubmitting = true;
                                   });
 
-                                  final bool exitoPost = await _enviarRespuestaTicket(ticket);
+                                  final bool exitoPost =
+                                      await _enviarRespuestaTicket(ticket);
                                   if (exitoPost) {
-                                    final bool exitoPut = await _actualizarEstadoTicket(ticket);
+                                    final bool exitoPut =
+                                        await _actualizarEstadoTicket(ticket);
                                     if (exitoPut && context.mounted) {
                                       Navigator.pop(context); // Cerrar diálogo
-                                      _fetchTickets(page: _currentPage, forceFetch: true); // Refrescar lista
+                                      _fetchTickets(
+                                        page: _currentPage,
+                                        forceFetch: true,
+                                      ); // Refrescar lista
                                     }
                                   }
 
@@ -1693,7 +1698,9 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                                   });
                                 },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0A2E5C), // Azul SSP
+                            backgroundColor: const Color(
+                              0xFF0A2E5C,
+                            ), // Azul SSP
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
@@ -1705,7 +1712,9 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                                   width: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
                                   ),
                                 )
                               : const Text(
@@ -1738,14 +1747,19 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
       return false;
     }
 
-    final url = Uri.parse('http://tickets.sspmichoacanlocal.gob.mx/api/respuesta/nuevo');
+    final url = Uri.parse(
+      'http://tickets.sspmichoacanlocal.gob.mx/api/respuesta/nuevo',
+    );
 
     final dynamic ticketId = ticket['db_id'] ?? ticket['id'];
     final dynamic userId = ticket['raw']?['user_id'] ?? ticket['user_id'];
     final String respuesta = _procedimientoController.text.trim().toUpperCase();
 
     if (respuesta.isEmpty) {
-      _mostrarMensaje('Por favor escriba el procedimiento realizado.', color: Colors.red);
+      _mostrarMensaje(
+        'Por favor escriba el procedimiento realizado.',
+        color: Colors.red,
+      );
       return false;
     }
 
@@ -1777,16 +1791,24 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
       debugPrint('📥 RESPUESTA POST - BODY: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        _mostrarMensaje('Procedimiento registrado con éxito.', color: Colors.green);
+        _mostrarMensaje(
+          'Procedimiento registrado con éxito.',
+          color: Colors.green,
+        );
         return true;
       } else {
         final Map<String, dynamic> errorData = jsonDecode(response.body);
-        final String errorMsg = errorData['message'] ?? 'Error desconocido al guardar el procedimiento';
+        final String errorMsg =
+            errorData['message'] ??
+            'Error desconocido al guardar el procedimiento';
         _mostrarMensaje('Servidor: $errorMsg', color: Colors.red);
         return false;
       }
     } catch (e) {
-      _mostrarMensaje('Error de red al registrar respuesta: $e', color: Colors.red);
+      _mostrarMensaje(
+        'Error de red al registrar respuesta: $e',
+        color: Colors.red,
+      );
       return false;
     }
   }
@@ -1802,11 +1824,11 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
     }
 
     final dynamic ticketId = ticket['db_id'] ?? ticket['id'];
-    final url = Uri.parse('http://tickets.sspmichoacanlocal.gob.mx/api/tickets/actualizar/$ticketId');
+    final url = Uri.parse(
+      'http://tickets.sspmichoacanlocal.gob.mx/api/tickets/actualizar/$ticketId',
+    );
 
-    final Map<String, dynamic> requestBody = {
-      'estado_actual': 5,
-    };
+    final Map<String, dynamic> requestBody = {'estado_actual': 5};
 
     debugPrint('-----------------------------------------');
     debugPrint('📤 ENVIANDO PUT A: $url');
@@ -1833,12 +1855,16 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
         return true;
       } else {
         final Map<String, dynamic> errorData = jsonDecode(response.body);
-        final String errorMsg = errorData['message'] ?? 'Error desconocido al actualizar el estado';
+        final String errorMsg =
+            errorData['message'] ?? 'Error desconocido al actualizar el estado';
         _mostrarMensaje('Servidor: $errorMsg', color: Colors.red);
         return false;
       }
     } catch (e) {
-      _mostrarMensaje('Error de red al actualizar estado: $e', color: Colors.red);
+      _mostrarMensaje(
+        'Error de red al actualizar estado: $e',
+        color: Colors.red,
+      );
       return false;
     }
   }
