@@ -976,7 +976,8 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                         final List<Barcode> barcodes = capture.barcodes;
                         if (barcodes.isNotEmpty &&
                             barcodes.first.rawValue != null) {
-                          final String rawValue = barcodes.first.rawValue!.trim();
+                          final String rawValue = barcodes.first.rawValue!
+                              .trim();
 
                           controller.stop();
                           Navigator.of(context).pop();
@@ -1515,8 +1516,11 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
     BuildContext context,
     Map<String, dynamic> ticket,
   ) {
-    final String tipoEquipo = (ticket['tipo_equipo'] ?? '').toString().toUpperCase();
-    final bool requiereEquipo = !tipoEquipo.contains('LAP') && !tipoEquipo.contains('OTRO');
+    final String tipoEquipo = (ticket['tipo_equipo'] ?? '')
+        .toString()
+        .toUpperCase();
+    final bool requiereEquipo =
+        !tipoEquipo.contains('LAP') && !tipoEquipo.contains('OTRO');
 
     // Limpiar variables de validación de credencial QR al abrir el diálogo
     setState(() {
@@ -1670,7 +1674,9 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                             boxShadow: _equipoValidado
                                 ? [
                                     BoxShadow(
-                                      color: Colors.green.withValues(alpha: 0.1),
+                                      color: Colors.green.withValues(
+                                        alpha: 0.1,
+                                      ),
                                       blurRadius: 10,
                                       offset: const Offset(0, 4),
                                     ),
@@ -1705,7 +1711,8 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
                               elevation: 0,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16)),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
                             ),
                           ),
                         ),

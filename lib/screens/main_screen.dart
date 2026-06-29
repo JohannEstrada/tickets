@@ -75,6 +75,13 @@ class _MainScreenState extends State<MainScreen> {
                   'Ubicación ${item['id']}',
             };
           }).toList();
+          
+          // Ordenar alfabéticamente por nombre
+          _urs.sort((a, b) => a['nombre']
+              .toString()
+              .toLowerCase()
+              .compareTo(b['nombre'].toString().toLowerCase()));
+
           _isLoadingURs = false;
         });
       } else {
