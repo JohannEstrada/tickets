@@ -75,7 +75,7 @@ class _MainScreenState extends State<MainScreen> {
                   'Ubicación ${item['id']}',
             };
           }).toList();
-          
+
           // Ordenar alfabéticamente por nombre
           _urs.sort((a, b) => a['nombre']
               .toString()

@@ -29,6 +29,27 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
   late final MobileScannerController _scannerController;
   late final TextEditingController _procedimientoController;
 
+  // Lista de personal asignado (mockup para futura consulta a base de datos/API)
+  final List<String> _opcionesPersonal = [
+    'JUAN PÉREZ',
+    'MARÍA GÓMEZ',
+    'PEDRO RODRÍGUEZ',
+    'ANA MARTÍNEZ',
+    'CARLOS SÁNCHEZ',
+  ];
+
+  // Lista de tipos de bienes (para el inventario)
+  final List<String> _opcionesTipoBien = [
+    'TELEFONO',
+    'CPU',
+    'MONITOR',
+    'NO BREAK',
+    'SWITCH',
+    'ROUTER',
+    'SERVIDOR',
+    'LAPTOP',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +82,362 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
         ),
       );
     }
+  }
+
+  Future<String?> _obtenerEmpleadoPorRFC(String rfc) async {
+    final url = Uri.parse(
+      'http://187.216.141.163:8080/api_siarh/api_info_empleado.php',
+    );
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: json.encode({
+          'action': 'get_empleado',
+          'rfc': rfc.trim().toUpperCase(),
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        if (responseData['success'] == true && responseData['data'] != null) {
+          final Map<String, dynamic> data = responseData['data'];
+          final String nombre = data['NOMBRE'] ?? '';
+          final String appat = data['APELLIDO PATERNO'] ?? '';
+          final String apmat = data['APELLIDO MATERNO'] ?? '';
+          final String nombreCompleto = '$nombre $appat $apmat'
+              .trim()
+              .toUpperCase();
+          return nombreCompleto;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error al consultar empleado por RFC: $e');
+    }
+    return null;
+  }
+
+  void _mostrarFormularioRegistroEquipo() {
+    final GlobalKey<FormState> formKey = GlobalKey<FormState>();
+    final TextEditingController personalController = TextEditingController();
+    String? selectedTipoBien;
+    bool isSearchingPersonal = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              backgroundColor: Colors.white,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 450),
+                padding: const EdgeInsets.all(24),
+                child: SingleChildScrollView(
+                  child: Form(
+                    key: formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Registrar Equipo a Inventario',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF0A2E5C),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: Colors.grey,
+                              ),
+                              onPressed: () {
+                                personalController.dispose();
+                                Navigator.pop(context);
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'PERSONAL ASIGNADO *',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: personalController,
+                          style: const TextStyle(fontSize: 13),
+                          textCapitalization: TextCapitalization.characters,
+                          decoration:
+                              _inputDecoration(
+                                'Escriba nombre, seleccione o busque por RFC...',
+                              ).copyWith(
+                                suffixIcon: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (isSearchingPersonal)
+                                      const Padding(
+                                        padding: EdgeInsets.all(12.0),
+                                        child: SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Color(0xFF0A2E5C),
+                                                ),
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.search_rounded,
+                                          color: Color(0xFF0A2E5C),
+                                        ),
+                                        tooltip: 'Buscar RFC',
+                                        onPressed: () async {
+                                          final searchVal = personalController
+                                              .text
+                                              .trim();
+                                          if (searchVal.length < 10) {
+                                            _mostrarMensaje(
+                                              'El RFC debe tener al menos 10 caracteres',
+                                            );
+                                            return;
+                                          }
+                                          setDialogState(() {
+                                            isSearchingPersonal = true;
+                                          });
+                                          final nombreCompleto =
+                                              await _obtenerEmpleadoPorRFC(
+                                                searchVal,
+                                              );
+                                          setDialogState(() {
+                                            isSearchingPersonal = false;
+                                            if (nombreCompleto != null) {
+                                              personalController.text =
+                                                  nombreCompleto;
+                                              if (!_opcionesPersonal.contains(
+                                                nombreCompleto,
+                                              )) {
+                                                _opcionesPersonal.add(
+                                                  nombreCompleto,
+                                                );
+                                              }
+                                              _mostrarMensaje(
+                                                'Empleado encontrado: $nombreCompleto',
+                                                color: Colors.green,
+                                              );
+                                            } else {
+                                              _mostrarMensaje(
+                                                'No se encontró personal con ese RFC',
+                                              );
+                                            }
+                                          });
+                                        },
+                                      ),
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(
+                                        Icons.arrow_drop_down_rounded,
+                                        color: Color(0xFF0A2E5C),
+                                        size: 28,
+                                      ),
+                                      tooltip: 'Ver opciones',
+                                      onSelected: (String newValue) {
+                                        setDialogState(() {
+                                          personalController.text = newValue;
+                                        });
+                                      },
+                                      itemBuilder: (BuildContext context) {
+                                        return _opcionesPersonal.map((
+                                          String value,
+                                        ) {
+                                          return PopupMenuItem<String>(
+                                            value: value,
+                                            child: Text(
+                                              value,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          );
+                                        }).toList();
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Por favor escriba, seleccione o busque el personal asignado';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'TIPO DE BIEN *',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          isExpanded: true,
+                          initialValue: selectedTipoBien,
+                          dropdownColor: Colors.white,
+                          icon: const Icon(
+                            Icons.arrow_drop_down_rounded,
+                            color: Color(0xFF0A2E5C),
+                            size: 28,
+                          ),
+                          style: const TextStyle(
+                            color: Color(0xFF1E293B),
+                            fontSize: 13,
+                          ),
+                          decoration: _inputDecoration(
+                            'Seleccione tipo de bien...',
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Por favor seleccione el tipo de bien';
+                            }
+                            return null;
+                          },
+                          items: _opcionesTipoBien.map((String tipo) {
+                            return DropdownMenuItem<String>(
+                              value: tipo,
+                              child: Text(tipo),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedTipoBien = value;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  personalController.dispose();
+                                  Navigator.pop(context);
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  side: BorderSide(color: Colors.grey.shade300),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: Text(
+                                  'Cancelar',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  if (formKey.currentState!.validate()) {
+                                    debugPrint(
+                                      'Personal asignado guardado: ${personalController.text}',
+                                    );
+                                    debugPrint(
+                                      'Tipo de bien guardado: $selectedTipoBien',
+                                    );
+                                    setState(() {
+                                      _equipoValidado = true;
+                                    });
+                                    personalController.dispose();
+                                    Navigator.pop(context);
+                                  }
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0A2E5C),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Guardar',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  InputDecoration _inputDecoration(String hintText) {
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+      filled: true,
+      fillColor: const Color(0xFFF8FAFC),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade200),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF0A2E5C), width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.red, width: 1.0),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.red, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    );
   }
 
   Future<void> _escanearQREquipo() async {
@@ -340,11 +717,7 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
       };
 
       final int mesNumero = meses[mes] ?? 1;
-      final DateTime fechaVigencia = DateTime(
-        ano,
-        mesNumero + 1,
-        0,
-      );
+      final DateTime fechaVigencia = DateTime(ano, mesNumero + 1, 0);
       final DateTime fechaActual = DateTime.now();
 
       if (fechaActual.isAfter(fechaVigencia)) {
@@ -730,9 +1103,7 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       elevation: 15,
       backgroundColor: Colors.white,
       child: Container(
@@ -755,10 +1126,7 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      color: Colors.grey,
-                    ),
+                    icon: const Icon(Icons.close_rounded, color: Colors.grey),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -806,10 +1174,7 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
                 controller: _procedimientoController,
                 maxLines: 2,
                 minLines: 2,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF1E293B),
-                ),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF1E293B)),
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(
                     RegExp(r'[a-zA-ZÁÉÍÓÚÑáéíóúñ\s]'),
@@ -862,56 +1227,108 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: _equipoValidado
-                          ? [
-                              BoxShadow(
-                                color: Colors.green.withValues(
-                                  alpha: 0.1,
-                                ),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ]
-                          : [],
-                    ),
-                    child: ElevatedButton.icon(
-                      onPressed: _escanearQREquipo,
-                      icon: Icon(
-                        _equipoValidado
-                            ? Icons.check_circle_rounded
-                            : Icons.qr_code_scanner_rounded,
-                        color: Colors.white,
-                      ),
-                      label: Text(
-                        _equipoValidado
-                            ? 'Equipo Validado'
-                            : 'Escanear QR de Equipo',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
+                if (!_equipoValidado) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _escanearQREquipo,
+                          icon: const Icon(
+                            Icons.qr_code_scanner_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Escanear QR',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0A2E5C),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
                         ),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _equipoValidado
-                            ? const Color(0xFF059669)
-                            : const Color(0xFF0A2E5C),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _mostrarFormularioRegistroEquipo,
+                          icon: const Icon(
+                            Icons.add_to_photos_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Registrar Equipo',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0A2E5C),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton.icon(
+                        onPressed: _escanearQREquipo,
+                        icon: const Icon(
+                          Icons.check_circle_rounded,
+                          color: Colors.white,
+                        ),
+                        label: const Text(
+                          'Equipo Validado',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF059669),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ],
               const SizedBox(height: 20),
               const Text(
@@ -972,8 +1389,7 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
                   ),
                 ),
               ),
-              if (_credencialValidada &&
-                  _nombreConductorValidado != null) ...[
+              if (_credencialValidada && _nombreConductorValidado != null) ...[
                 const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
@@ -1043,8 +1459,9 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
                               _isSubmitting = true;
                             });
 
-                            final bool exitoPost =
-                                await _enviarRespuestaTicket(widget.ticket);
+                            final bool exitoPost = await _enviarRespuestaTicket(
+                              widget.ticket,
+                            );
                             if (exitoPost) {
                               final bool exitoPut =
                                   await _actualizarEstadoTicket(widget.ticket);

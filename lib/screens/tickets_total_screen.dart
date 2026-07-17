@@ -919,10 +919,6 @@ class _TicketsTotalScreenState extends State<TicketsTotalScreen> {
     );
   }
 
-
-
-
-
   // Diálogo para la acción de cerrar un ticket
   void _showCloseTicketDialog(
     BuildContext context,
