@@ -46,7 +46,6 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
     'ROUTER',
     'SERVIDOR',
     'LAPTOP',
-    'OTRO',
   ];
 
   final List<String> _opcionesEstatus = ['BUENO', 'MALO', 'REGULAR'];
@@ -128,6 +127,30 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
   bool _isSearchingPersonal = false;
   String? _personalErrorText;
 
+  bool get _mostrarConectividad {
+    if (_selectedTipoBien == 'TELEFONO') return true;
+    if (_selectedTipoBien == 'CPU') return true;
+    if (_selectedTipoBien == 'MONITOR') return false;
+    if (_selectedTipoBien == 'NO BREAK') return false;
+    if (_selectedTipoBien == 'SWITCH') return true;
+    if (_selectedTipoBien == 'ROUTER') return true;
+    if (_selectedTipoBien == 'SERVIDOR') return true;
+    if (_selectedTipoBien == 'LAPTOP') return true;
+    return false;
+  }
+
+  bool get _mostrarCaracteristicas {
+    if (_selectedTipoBien == 'TELEFONO') return false;
+    if (_selectedTipoBien == 'CPU') return true;
+    if (_selectedTipoBien == 'MONITOR') return false;
+    if (_selectedTipoBien == 'NO BREAK') return false;
+    if (_selectedTipoBien == 'SWITCH') return false;
+    if (_selectedTipoBien == 'ROUTER') return false;
+    if (_selectedTipoBien == 'SERVIDOR') return true;
+    if (_selectedTipoBien == 'LAPTOP') return true;
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -185,6 +208,10 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
     final url = Uri.parse(
       'http://187.216.141.163:8080/api_siarh/api_info_empleado.php',
     );
+    debugPrint('📤 [API INFO EMPLEADO] POST a: $url');
+    debugPrint(
+      '📦 [API INFO EMPLEADO] Body: {"action": "get_empleado", "rfc": "${rfc.trim().toUpperCase()}"}',
+    );
     try {
       final response = await http.post(
         url,
@@ -193,6 +220,13 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
           'action': 'get_empleado',
           'rfc': rfc.trim().toUpperCase(),
         }),
+      );
+
+      debugPrint(
+        '📥 [API INFO EMPLEADO] Código de respuesta: ${response.statusCode}',
+      );
+      debugPrint(
+        '📥 [API INFO EMPLEADO] Cuerpo de respuesta: ${response.body}',
       );
 
       if (response.statusCode == 200) {
@@ -205,17 +239,34 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
           final String nombreCompleto = '$nombre $appat $apmat'
               .trim()
               .toUpperCase();
+          debugPrint(
+            '✅ [API INFO EMPLEADO] Empleado encontrado: $nombreCompleto',
+          );
           return nombreCompleto;
+        } else {
+          debugPrint(
+            '⚠️ [API INFO EMPLEADO] Éxito falso o sin datos: $responseData',
+          );
         }
+      } else {
+        debugPrint(
+          '❌ [API INFO EMPLEADO] Falló con estado: ${response.statusCode}',
+        );
       }
     } catch (e) {
-      debugPrint('Error al consultar empleado por RFC: $e');
+      debugPrint('🔥 [API INFO EMPLEADO] Error de conexión: $e');
     }
     return null;
   }
 
   Future<void> _buscarPorRFC(String rfc) async {
-    if (_isSearchingPersonal) return;
+    debugPrint('🔍 [BUSCAR POR RFC] Iniciando búsqueda para: "$rfc"');
+    if (_isSearchingPersonal) {
+      debugPrint(
+        '⚠️ [BUSCAR POR RFC] Ya hay una búsqueda en progreso, ignorando...',
+      );
+      return;
+    }
     setState(() {
       _isSearchingPersonal = true;
       _personalErrorText = null;
@@ -231,6 +282,9 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
           color: Colors.green,
         );
       } else {
+        debugPrint(
+          '❌ [BUSCAR POR RFC] No se obtuvo ningún empleado para el RFC: "$rfc"',
+        );
         _personalErrorText = 'RFC no encontrado, verifique de nuevo...';
         _mostrarMensaje('No se encontró personal con ese RFC');
       }
@@ -500,6 +554,22 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
                                 onChanged: (value) {
                                   setState(() {
                                     _selectedTipoBien = value;
+
+                                    if (!_mostrarConectividad) {
+                                      _ipController.clear();
+                                      _macController.clear();
+                                    }
+
+                                    if (!_mostrarCaracteristicas) {
+                                      _selectedTipoRam = null;
+                                      _selectedMemoriaRam = null;
+                                      _selectedVelocidadRam = null;
+                                      _selectedTipoDd = null;
+                                      _selectedCapacidadDd = null;
+                                      _selectedProcesador = null;
+                                      _selectedSistemaOperativo = null;
+                                      _selectedVersionSo = null;
+                                    }
                                   });
                                 },
                               ),
@@ -772,466 +842,472 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
                 ),
 
                 // TEMA 4: Información de conectividad (IP y MAC)
-                _buildThemeSection(
-                  icon: Icons.settings_ethernet_rounded,
-                  title: 'Información de conectividad (IP y MAC)',
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'DIRECCIÓN IP',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
+                if (_mostrarConectividad) ...[
+                  _buildThemeSection(
+                    icon: Icons.settings_ethernet_rounded,
+                    title: 'Información de conectividad (IP y MAC)',
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'DIRECCIÓN IP',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              TextFormField(
-                                controller: _ipController,
-                                style: const TextStyle(fontSize: 13),
-                                decoration: _inputDecoration(
-                                  'Ej. 192.168.1.100...',
+                                const SizedBox(height: 6),
+                                TextFormField(
+                                  controller: _ipController,
+                                  style: const TextStyle(fontSize: 13),
+                                  decoration: _inputDecoration(
+                                    'Ej. 192.168.1.100...',
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'DIRECCIÓN MAC',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'DIRECCIÓN MAC',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              TextFormField(
-                                controller: _macController,
-                                style: const TextStyle(fontSize: 13),
-                                textCapitalization:
-                                    TextCapitalization.characters,
-                                decoration: _inputDecoration(
-                                  'Ej. 00:1A:2B:3C:4D:5E...',
+                                const SizedBox(height: 6),
+                                TextFormField(
+                                  controller: _macController,
+                                  style: const TextStyle(fontSize: 13),
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  decoration: _inputDecoration(
+                                    'Ej. 00:1A:2B:3C:4D:5E...',
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
 
                 // TEMA 5: Características del equipo
-                _buildThemeSection(
-                  icon: Icons.memory_rounded,
-                  title:
-                      'Características del equipo (RAM, almacenamiento, procesador, software)',
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'TIPO RAM',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
+                if (_mostrarCaracteristicas) ...[
+                  _buildThemeSection(
+                    icon: Icons.memory_rounded,
+                    title:
+                        'Características del equipo (RAM, almacenamiento, procesador, software)',
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'TIPO RAM',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                initialValue: _selectedTipoRam,
-                                dropdownColor: Colors.white,
-                                icon: const Icon(
-                                  Icons.arrow_drop_down_rounded,
-                                  color: Color(0xFF0A2E5C),
-                                  size: 28,
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _selectedTipoRam,
+                                  dropdownColor: Colors.white,
+                                  icon: const Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    color: Color(0xFF0A2E5C),
+                                    size: 28,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontSize: 13,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    'Seleccione tipo...',
+                                  ),
+                                  items: _opcionesTipoRam.map((String tipo) {
+                                    return DropdownMenuItem<String>(
+                                      value: tipo,
+                                      child: Text(tipo),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedTipoRam = value;
+                                    });
+                                  },
                                 ),
-                                style: const TextStyle(
-                                  color: Color(0xFF1E293B),
-                                  fontSize: 13,
-                                ),
-                                decoration: _inputDecoration(
-                                  'Seleccione tipo...',
-                                ),
-                                items: _opcionesTipoRam.map((String tipo) {
-                                  return DropdownMenuItem<String>(
-                                    value: tipo,
-                                    child: Text(tipo),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedTipoRam = value;
-                                  });
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'MEMORIA RAM',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'MEMORIA RAM',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                initialValue: _selectedMemoriaRam,
-                                dropdownColor: Colors.white,
-                                icon: const Icon(
-                                  Icons.arrow_drop_down_rounded,
-                                  color: Color(0xFF0A2E5C),
-                                  size: 28,
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _selectedMemoriaRam,
+                                  dropdownColor: Colors.white,
+                                  icon: const Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    color: Color(0xFF0A2E5C),
+                                    size: 28,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontSize: 13,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    'Seleccione memoria...',
+                                  ),
+                                  items: _opcionesMemoriaRam.map((String ram) {
+                                    return DropdownMenuItem<String>(
+                                      value: ram,
+                                      child: Text(ram),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedMemoriaRam = value;
+                                    });
+                                  },
                                 ),
-                                style: const TextStyle(
-                                  color: Color(0xFF1E293B),
-                                  fontSize: 13,
-                                ),
-                                decoration: _inputDecoration(
-                                  'Seleccione memoria...',
-                                ),
-                                items: _opcionesMemoriaRam.map((String ram) {
-                                  return DropdownMenuItem<String>(
-                                    value: ram,
-                                    child: Text(ram),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedMemoriaRam = value;
-                                  });
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'VELOCIDAD RAM',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'VELOCIDAD RAM',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                initialValue: _selectedVelocidadRam,
-                                dropdownColor: Colors.white,
-                                icon: const Icon(
-                                  Icons.arrow_drop_down_rounded,
-                                  color: Color(0xFF0A2E5C),
-                                  size: 28,
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _selectedVelocidadRam,
+                                  dropdownColor: Colors.white,
+                                  icon: const Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    color: Color(0xFF0A2E5C),
+                                    size: 28,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontSize: 13,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    'Seleccione velocidad...',
+                                  ),
+                                  items: _opcionesVelocidadRam.map((
+                                    String vel,
+                                  ) {
+                                    return DropdownMenuItem<String>(
+                                      value: vel,
+                                      child: Text(vel),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedVelocidadRam = value;
+                                    });
+                                  },
                                 ),
-                                style: const TextStyle(
-                                  color: Color(0xFF1E293B),
-                                  fontSize: 13,
-                                ),
-                                decoration: _inputDecoration(
-                                  'Seleccione velocidad...',
-                                ),
-                                items: _opcionesVelocidadRam.map((String vel) {
-                                  return DropdownMenuItem<String>(
-                                    value: vel,
-                                    child: Text(vel),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedVelocidadRam = value;
-                                  });
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'TIPO DD',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'TIPO DD',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                initialValue: _selectedTipoDd,
-                                dropdownColor: Colors.white,
-                                icon: const Icon(
-                                  Icons.arrow_drop_down_rounded,
-                                  color: Color(0xFF0A2E5C),
-                                  size: 28,
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _selectedTipoDd,
+                                  dropdownColor: Colors.white,
+                                  icon: const Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    color: Color(0xFF0A2E5C),
+                                    size: 28,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontSize: 13,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    'Seleccione tipo...',
+                                  ),
+                                  items: _opcionesTipoDd.map((String dd) {
+                                    return DropdownMenuItem<String>(
+                                      value: dd,
+                                      child: Text(dd),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedTipoDd = value;
+                                    });
+                                  },
                                 ),
-                                style: const TextStyle(
-                                  color: Color(0xFF1E293B),
-                                  fontSize: 13,
-                                ),
-                                decoration: _inputDecoration(
-                                  'Seleccione tipo...',
-                                ),
-                                items: _opcionesTipoDd.map((String dd) {
-                                  return DropdownMenuItem<String>(
-                                    value: dd,
-                                    child: Text(dd),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedTipoDd = value;
-                                  });
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'CAPACIDAD DD',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'CAPACIDAD DD',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                initialValue: _selectedCapacidadDd,
-                                dropdownColor: Colors.white,
-                                icon: const Icon(
-                                  Icons.arrow_drop_down_rounded,
-                                  color: Color(0xFF0A2E5C),
-                                  size: 28,
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _selectedCapacidadDd,
+                                  dropdownColor: Colors.white,
+                                  icon: const Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    color: Color(0xFF0A2E5C),
+                                    size: 28,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontSize: 13,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    'Seleccione capacidad...',
+                                  ),
+                                  items: _opcionesCapacidadDd.map((String cap) {
+                                    return DropdownMenuItem<String>(
+                                      value: cap,
+                                      child: Text(cap),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedCapacidadDd = value;
+                                    });
+                                  },
                                 ),
-                                style: const TextStyle(
-                                  color: Color(0xFF1E293B),
-                                  fontSize: 13,
-                                ),
-                                decoration: _inputDecoration(
-                                  'Seleccione capacidad...',
-                                ),
-                                items: _opcionesCapacidadDd.map((String cap) {
-                                  return DropdownMenuItem<String>(
-                                    value: cap,
-                                    child: Text(cap),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedCapacidadDd = value;
-                                  });
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'PROCESADOR',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'PROCESADOR',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                initialValue: _selectedProcesador,
-                                dropdownColor: Colors.white,
-                                icon: const Icon(
-                                  Icons.arrow_drop_down_rounded,
-                                  color: Color(0xFF0A2E5C),
-                                  size: 28,
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _selectedProcesador,
+                                  dropdownColor: Colors.white,
+                                  icon: const Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    color: Color(0xFF0A2E5C),
+                                    size: 28,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontSize: 13,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    'Seleccione procesador...',
+                                  ),
+                                  items: _opcionesProcesador.map((String proc) {
+                                    return DropdownMenuItem<String>(
+                                      value: proc,
+                                      child: Text(proc),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedProcesador = value;
+                                    });
+                                  },
                                 ),
-                                style: const TextStyle(
-                                  color: Color(0xFF1E293B),
-                                  fontSize: 13,
-                                ),
-                                decoration: _inputDecoration(
-                                  'Seleccione procesador...',
-                                ),
-                                items: _opcionesProcesador.map((String proc) {
-                                  return DropdownMenuItem<String>(
-                                    value: proc,
-                                    child: Text(proc),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedProcesador = value;
-                                  });
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'SISTEMA OPERATIVO',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'SISTEMA OPERATIVO',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                initialValue: _selectedSistemaOperativo,
-                                dropdownColor: Colors.white,
-                                icon: const Icon(
-                                  Icons.arrow_drop_down_rounded,
-                                  color: Color(0xFF0A2E5C),
-                                  size: 28,
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _selectedSistemaOperativo,
+                                  dropdownColor: Colors.white,
+                                  icon: const Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    color: Color(0xFF0A2E5C),
+                                    size: 28,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontSize: 13,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    'Seleccione sistema...',
+                                  ),
+                                  items: _opcionesSistemaOperativo.map((
+                                    String so,
+                                  ) {
+                                    return DropdownMenuItem<String>(
+                                      value: so,
+                                      child: Text(so),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedSistemaOperativo = value;
+                                    });
+                                  },
                                 ),
-                                style: const TextStyle(
-                                  color: Color(0xFF1E293B),
-                                  fontSize: 13,
-                                ),
-                                decoration: _inputDecoration(
-                                  'Seleccione sistema...',
-                                ),
-                                items: _opcionesSistemaOperativo.map((
-                                  String so,
-                                ) {
-                                  return DropdownMenuItem<String>(
-                                    value: so,
-                                    child: Text(so),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedSistemaOperativo = value;
-                                  });
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'VERSIÓN S.O.',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'VERSIÓN SISTEMA OPERATIVO',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey,
+                                    letterSpacing: 0.5,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              DropdownButtonFormField<String>(
-                                isExpanded: true,
-                                initialValue: _selectedVersionSo,
-                                dropdownColor: Colors.white,
-                                icon: const Icon(
-                                  Icons.arrow_drop_down_rounded,
-                                  color: Color(0xFF0A2E5C),
-                                  size: 28,
+                                const SizedBox(height: 6),
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  initialValue: _selectedVersionSo,
+                                  dropdownColor: Colors.white,
+                                  icon: const Icon(
+                                    Icons.arrow_drop_down_rounded,
+                                    color: Color(0xFF0A2E5C),
+                                    size: 28,
+                                  ),
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E293B),
+                                    fontSize: 13,
+                                  ),
+                                  decoration: _inputDecoration(
+                                    'Seleccione versión...',
+                                  ),
+                                  items: _opcionesVersionSo.map((String ver) {
+                                    return DropdownMenuItem<String>(
+                                      value: ver,
+                                      child: Text(ver),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedVersionSo = value;
+                                    });
+                                  },
                                 ),
-                                style: const TextStyle(
-                                  color: Color(0xFF1E293B),
-                                  fontSize: 13,
-                                ),
-                                decoration: _inputDecoration(
-                                  'Seleccione versión...',
-                                ),
-                                items: _opcionesVersionSo.map((String ver) {
-                                  return DropdownMenuItem<String>(
-                                    value: ver,
-                                    child: Text(ver),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedVersionSo = value;
-                                  });
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
 
                 // TEMA 6: Anotaciones especiales
                 _buildThemeSection(

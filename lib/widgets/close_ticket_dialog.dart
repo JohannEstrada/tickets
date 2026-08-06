@@ -30,8 +30,6 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
   late final MobileScannerController _scannerController;
   late final TextEditingController _procedimientoController;
 
-
-
   @override
   void initState() {
     super.initState();
@@ -66,12 +64,10 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
     }
   }
 
-
-
   void _mostrarFormularioRegistroEquipo() async {
     final result = await showDialog<bool>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (context) => const RegistrarInventarioDialog(),
     );
     if (result == true) {
@@ -80,8 +76,6 @@ class _CloseTicketDialogState extends State<CloseTicketDialog> {
       });
     }
   }
-
-
 
   Future<void> _escanearQREquipo() async {
     await showDialog(
