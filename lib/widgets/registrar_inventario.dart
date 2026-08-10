@@ -59,7 +59,7 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
     'No aplica',
   ];
 
-  final List<String> _opcionesMemoriaRam = [
+  final List<String> ramCapacidad = [
     '4GB',
     '8GB',
     '16GB',
@@ -68,7 +68,7 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
     'No aplica',
   ];
 
-  final List<String> _opcionesVelocidadRam = [
+  final List<String> ramVelocidad = [
     '1066MHz',
     '1333 MHz',
     '1600 MHz',
@@ -77,15 +77,9 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
     'No aplica',
   ];
 
-  final List<String> _opcionesTipoDd = [
-    'HDD',
-    'SDD',
-    'NVMe',
-    'eMMC',
-    'No aplica',
-  ];
+  final List<String> ddTipo = ['HDD', 'SDD', 'NVMe', 'eMMC', 'No aplica'];
 
-  final List<String> _opcionesCapacidadDd = [
+  final List<String> ddCapacidad = [
     '128 GB',
     '256 GB',
     '512 GB',
@@ -126,6 +120,8 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
 
   bool _isSearchingPersonal = false;
   String? _personalErrorText;
+  String? _ultimoRfcBuscado;
+  bool _isSaving = false;
 
   bool get _mostrarConectividad {
     if (_selectedTipoBien == 'TELEFONO') return true;
@@ -168,6 +164,9 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
   }
 
   void _onPersonalChanged() {
+    if (_personalController.text.isEmpty) {
+      _ultimoRfcBuscado = null;
+    }
     if (_personalErrorText != null) {
       setState(() {
         _personalErrorText = null;
@@ -276,6 +275,7 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
       _isSearchingPersonal = false;
       if (nombreCompleto != null) {
         _personalController.text = nombreCompleto;
+        _ultimoRfcBuscado = rfc.trim().toUpperCase();
         _personalErrorText = null;
         _mostrarMensaje(
           'Empleado encontrado: $nombreCompleto',
@@ -289,6 +289,78 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
         _mostrarMensaje('No se encontró personal con ese RFC');
       }
     });
+  }
+
+  Future<void> _guardarEquipo() async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    const String url =
+        'http://187.216.141.163:8080/api_inventario/registrar_equipo.php';
+    debugPrint('📤 [REGISTRAR EQUIPO] POST a: $url');
+
+    final Map<String, dynamic> payload = {
+      'idLinea': 2,
+      //idTipo
+      //idPersonal
+      'rfc': _ultimoRfcBuscado ?? _personalController.text.trim(),
+      'descripcion': _descripcionAdicionalController.text.trim(),
+      'ramTipo': _mostrarCaracteristicas ? _selectedTipoRam : null,
+      'ramCapacidad': _mostrarCaracteristicas ? _selectedMemoriaRam : null,
+      'ramVelocidad': _mostrarCaracteristicas ? _selectedVelocidadRam : null,
+      'ddTipo': _mostrarCaracteristicas ? _selectedTipoDd : null,
+      'ddCapacidad': _mostrarCaracteristicas ? _selectedCapacidadDd : null,
+      'procesador': _mostrarCaracteristicas ? _selectedProcesador : null,
+      'sistema_operativo': _mostrarCaracteristicas
+          ? _selectedSistemaOperativo
+          : null,
+      'version_so': _mostrarCaracteristicas ? _selectedVersionSo : null,
+      'ip': _mostrarConectividad ? _ipController.text.trim() : '',
+      'mac': _mostrarConectividad
+          ? _macController.text.trim().toUpperCase()
+          : '',
+      'marca': _marcaController.text.trim(),
+      'modelo': _modeloController.text.trim(),
+      'resguardo': _resguardoController.text.trim(),
+      'rpatrimonio': _patrimonioController.text.trim(),
+      'serie': _serieController.text.trim(),
+      'estatus': _selectedEstatus,
+      'observaciones': _observacionesController.text.trim(),
+    };
+
+    debugPrint('📦 [REGISTRAR EQUIPO] Payload: ${json.encode(payload)}');
+
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: json.encode(payload),
+      );
+
+      debugPrint(
+        '📥 [REGISTRAR EQUIPO] Código de respuesta: ${response.statusCode}',
+      );
+      debugPrint('📥 [REGISTRAR EQUIPO] Cuerpo de respuesta: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _mostrarMensaje('Equipo registrado correctamente', color: Colors.green);
+        if (mounted) {
+          Navigator.pop(context, true);
+        }
+      } else {
+        _mostrarMensaje('Error del servidor: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('🔥 [REGISTRAR EQUIPO] Error de conexión: $e');
+      _mostrarMensaje('Error de conexión al servidor: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
   InputDecoration _inputDecoration(String hintText) {
@@ -454,6 +526,7 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
                                     tooltip: 'Limpiar',
                                     onPressed: () {
                                       _personalController.clear();
+                                      _ultimoRfcBuscado = null;
                                     },
                                   )
                                 : null,
@@ -993,7 +1066,7 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
                                   decoration: _inputDecoration(
                                     'Seleccione memoria...',
                                   ),
-                                  items: _opcionesMemoriaRam.map((String ram) {
+                                  items: ramCapacidad.map((String ram) {
                                     return DropdownMenuItem<String>(
                                       value: ram,
                                       child: Text(ram),
@@ -1044,9 +1117,7 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
                                   decoration: _inputDecoration(
                                     'Seleccione velocidad...',
                                   ),
-                                  items: _opcionesVelocidadRam.map((
-                                    String vel,
-                                  ) {
+                                  items: ramVelocidad.map((String vel) {
                                     return DropdownMenuItem<String>(
                                       value: vel,
                                       child: Text(vel),
@@ -1092,7 +1163,7 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
                                   decoration: _inputDecoration(
                                     'Seleccione tipo...',
                                   ),
-                                  items: _opcionesTipoDd.map((String dd) {
+                                  items: ddTipo.map((String dd) {
                                     return DropdownMenuItem<String>(
                                       value: dd,
                                       child: Text(dd),
@@ -1143,7 +1214,7 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
                                   decoration: _inputDecoration(
                                     'Seleccione capacidad...',
                                   ),
-                                  items: _opcionesCapacidadDd.map((String cap) {
+                                  items: ddCapacidad.map((String cap) {
                                     return DropdownMenuItem<String>(
                                       value: cap,
                                       child: Text(cap),
@@ -1341,9 +1412,11 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(context, false);
-                        },
+                        onPressed: _isSaving
+                            ? null
+                            : () {
+                                Navigator.pop(context, false);
+                              },
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           side: BorderSide(color: Colors.grey.shade300),
@@ -1364,68 +1437,13 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () {
-                          if (_formKey.currentState!.validate()) {
-                            debugPrint(
-                              'Personal asignado guardado: ${_personalController.text}',
-                            );
-                            debugPrint(
-                              'Línea de bien guardada: $_selectedLineaBien',
-                            );
-                            debugPrint(
-                              'Tipo de bien guardado: $_selectedTipoBien',
-                            );
-                            debugPrint(
-                              'Descripción adicional guardada: ${_descripcionAdicionalController.text}',
-                            );
-                            debugPrint(
-                              'Marca guardada: ${_marcaController.text}',
-                            );
-                            debugPrint(
-                              'Modelo guardado: ${_modeloController.text}',
-                            );
-                            debugPrint(
-                              'Resguardo guardado: ${_resguardoController.text}',
-                            );
-                            debugPrint(
-                              'R. Patrimonio guardado: ${_patrimonioController.text}',
-                            );
-                            debugPrint(
-                              'No. Serie guardado: ${_serieController.text}',
-                            );
-                            debugPrint('Estatus guardado: $_selectedEstatus');
-                            debugPrint(
-                              'Dirección IP guardada: ${_ipController.text}',
-                            );
-                            debugPrint(
-                              'Dirección MAC guardada: ${_macController.text}',
-                            );
-                            debugPrint('Tipo RAM guardado: $_selectedTipoRam');
-                            debugPrint(
-                              'Memoria RAM guardada: $_selectedMemoriaRam',
-                            );
-                            debugPrint(
-                              'Velocidad RAM guardada: $_selectedVelocidadRam',
-                            );
-                            debugPrint('Tipo DD guardado: $_selectedTipoDd');
-                            debugPrint(
-                              'Capacidad DD guardada: $_selectedCapacidadDd',
-                            );
-                            debugPrint(
-                              'Procesador guardado: $_selectedProcesador',
-                            );
-                            debugPrint(
-                              'Sistema operativo guardado: $_selectedSistemaOperativo',
-                            );
-                            debugPrint(
-                              'Versión S.O. guardada: $_selectedVersionSo',
-                            );
-                            debugPrint(
-                              'Observaciones guardadas: ${_observacionesController.text}',
-                            );
-                            Navigator.pop(context, true);
-                          }
-                        },
+                        onPressed: _isSaving
+                            ? null
+                            : () async {
+                                if (_formKey.currentState!.validate()) {
+                                  await _guardarEquipo();
+                                }
+                              },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0A2E5C),
                           foregroundColor: Colors.white,
@@ -1434,13 +1452,24 @@ class _RegistrarInventarioDialogState extends State<RegistrarInventarioDialog> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text(
-                          'Guardar',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        child: _isSaving
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            : const Text(
+                                'Guardar',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
                   ],
